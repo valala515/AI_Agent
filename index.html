@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NMS Health Coach</title>
+  <link rel="stylesheet" href="widget.css" />
+  <!-- Markdown renderer + sanitiser for AI replies -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+</head>
+<body>
+
+  <!-- Faint logo watermark visible on the demo stage -->
+  <div class="watermark" aria-hidden="true">
+    <img src="assets/newmindstart-logo.svg" alt="" />
+  </div>
+
+  <main class="stage">
+
+    <!-- ── Chat widget ─────────────────────────────────────────────────────── -->
+    <section class="chat-widget" id="chat-widget" aria-label="NMS Health Coach">
+
+      <!-- Topbar -->
+      <header class="chat-topbar">
+        <div class="chat-brand">
+          <img class="chat-brand-mark" src="assets/newmindstart-mark.svg" alt="" />
+          <span class="chat-brand-title">Your NMS Wellness Companion</span>
+        </div>
+        <div class="chat-actions">
+          <button class="chat-action" id="btn-expand" type="button" aria-label="Collapse">
+            <!-- Shown when widget is full-size → click to collapse (arrows point inward) -->
+            <svg class="icon-collapse" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="17" y1="3" x2="12" y2="8"/>
+              <polyline points="12,4 12,8 16,8"/>
+              <line x1="3" y1="17" x2="8" y2="12"/>
+              <polyline points="8,16 8,12 4,12"/>
+            </svg>
+            <!-- Shown when widget is collapsed → click to expand (arrows point outward) -->
+            <svg class="icon-expand" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="8" x2="17" y2="3"/>
+              <polyline points="13,3 17,3 17,7"/>
+              <line x1="8" y1="12" x2="3" y2="17"/>
+              <polyline points="7,17 3,17 3,13"/>
+            </svg>
+          </button>
+          <button class="chat-action" id="btn-close" type="button" aria-label="Close">×</button>
+        </div>
+      </header>
+
+      <!-- Message thread -->
+      <div class="chat-body">
+        <div id="chat-messages">
+          <!-- Greeting message is injected by JS after a short delay -->
+          <div class="message-group" id="greeting-group">
+            <div class="agent-label">
+              <img src="assets/newmindstart-mark.svg" alt="" />
+              <span>NMS Companion</span>
+            </div>
+            <div class="companion-shell">
+              <div class="companion-bubble" id="greeting-bubble">
+                <div class="typing" id="typing-indicator">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+            <div class="message-meta">now</div>
+          </div>
+        </div>
+
+        <!-- Quick-reply chips -->
+        <div class="quick-replies" id="quick-replies">
+          <div class="quick-reply">🌅 Build a morning routine</div>
+          <div class="quick-reply">🧠 5-min mindfulness</div>
+          <div class="quick-reply">🧘 Reduce stress today</div>
+          <div class="quick-reply">💪 Start exercising more</div>
+          <div class="quick-reply">🥗 Eat for more energy</div>
+          <div class="quick-reply">😴 Help me sleep better</div>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div class="chat-input-area">
+        <div class="chat-input-row" id="input-row">
+          <!-- Idle overlay: shown when field is empty and unfocused -->
+          <div class="input-idle-label" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor">
+              <path d="M230.15,70.54,185.46,25.86a20,20,0,0,0-28.28,0L33.86,149.17A19.86,19.86,0,0,0,28,163.31V208a20,20,0,0,0,20,20H216a12,12,0,0,0,0-24H125L230.15,98.83A20,20,0,0,0,230.15,70.54ZM91,204H52V165l84-84,39,39ZM192,103,153,64l18.34-18.34,39,39Z"/>
+            </svg>
+            <span>Ask me anything…</span>
+          </div>
+          <input class="chat-input" id="chat-input" placeholder="" aria-label="Message" />
+          <button class="send-button" id="send-button" type="button" aria-label="Send">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+        <p class="footer-note">AI may make mistakes · not a substitute for professional medical advice</p>
+      </div>
+
+    </section><!-- /chat-widget -->
+
+  </main>
+
+  <!-- Mini bubble — replaces the widget when the user closes it -->
+  <button class="chat-bubble" id="chat-bubble" aria-label="Open NMS Wellness Companion">
+    <img src="assets/newmindstart-mark.svg" alt="" />
+    <span class="chat-bubble-text">NMS Wellness<br>Companion</span>
+  </button>
+
+  <script>
+    // ── Markdown helper ────────────────────────────────────────────────────────
+    marked.use({ breaks: true, gfm: true });
+
+    function renderMarkdown(text) {
+      return DOMPurify.sanitize(marked.parse(text));
+    }
+
+    // ── Element references ─────────────────────────────────────────────────────
+    const chatWidget   = document.getElementById("chat-widget");
+    const chatBubble   = document.getElementById("chat-bubble");
+    const chatMessages = document.getElementById("chat-messages");
+    const quickReplies = document.getElementById("quick-replies");
+    const inputRow     = document.getElementById("input-row");
+    const chatInput    = document.getElementById("chat-input");
+    const sendButton   = document.getElementById("send-button");
+    const btnExpand    = document.getElementById("btn-expand");
+    const btnClose     = document.getElementById("btn-close");
+
+    // ── User context sent with every API request ───────────────────────────────
+    // These fields are merged with the server-side user profile.
+    const userContext = {
+      userId:            "user-1001",
+      subscriptionState: "subscribed",
+      currentFocus:      "stress & sleep",
+      healthGoals:       ["stress management", "better sleep", "mindfulness"],
+    };
+
+    // Conversation history — last 10 turns are forwarded to the AI
+    const conversation = [];
+
+    // Tracks whether quick-reply chips have been moved to the compact strip
+    let chipsCollapsed = false;
+
+    function collapseChips() {
+      if (chipsCollapsed) return;
+      chipsCollapsed = true;
+      quickReplies.classList.add("compact");
+      // Move chips out of the chat body and place them just above the input area
+      const inputArea = chatWidget.querySelector(".chat-input-area");
+      chatWidget.insertBefore(quickReplies, inputArea);
+    }
+
+    // ── Greeting message ───────────────────────────────────────────────────────
+    const GREETING = `
+Hi there! I'm your **NMS Wellness Companion** 👋
+
+Think of me as your personal nutritionist, meditation guide, workout coach, and daily habits mentor — all in one place.
+
+I'm here to learn what *you* need and shape the experience around your goals, your lifestyle, and your pace. Whether that's building a morning routine, eating for more energy, managing stress, or finally getting better sleep — we'll figure it out together.
+
+What would you like to work on today?
+    `.trim();
+
+    // Reveal the greeting after a short typing animation
+    window.setTimeout(() => {
+      const indicator = document.getElementById("typing-indicator");
+      const bubble    = document.getElementById("greeting-bubble");
+      if (indicator) indicator.remove();
+      if (bubble)    bubble.innerHTML = renderMarkdown(GREETING);
+      // Stamp the greeting with the current time
+      const greetingGroup = document.getElementById("greeting-group");
+      if (greetingGroup) stampGroup(greetingGroup, new Date());
+    }, 900);
+
+    // ── Timestamp utilities ────────────────────────────────────────────────────
+    function formatRelativeTime(date) {
+      const diffMs  = Date.now() - date;
+      const diffMin = Math.floor(diffMs / 60_000);
+      const diffHr  = Math.floor(diffMs / 3_600_000);
+      const diffDay = Math.floor(diffMs / 86_400_000);
+
+      if (diffMin < 1)  return "now";
+      if (diffMin < 60) return diffMin === 1 ? "1 min ago" : `${diffMin} min ago`;
+      if (diffHr  < 24) return diffHr  === 1 ? "1 hr ago"  : `${diffHr} hr ago`;
+      if (diffDay === 1) return "yesterday";
+      if (diffDay <  7) return `${diffDay} days ago`;
+      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function isSameDay(a, b) {
+      return a.getFullYear() === b.getFullYear() &&
+             a.getMonth()    === b.getMonth()    &&
+             a.getDate()     === b.getDate();
+    }
+
+    function formatDateLabel(date) {
+      const now  = new Date();
+      const diff = Math.floor((now - date) / 86_400_000);
+      if (isSameDay(date, now)) return "Today";
+      if (diff < 2)             return "Yesterday";
+      if (diff < 7)             return date.toLocaleDateString(undefined, { weekday: "long" });
+      return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+    }
+
+    function stampGroup(group, date) {
+      group.dataset.time = date.toISOString();
+      const meta = group.querySelector(".message-meta");
+      if (meta) meta.textContent = formatRelativeTime(date);
+    }
+
+    function maybeInsertDateSeparator(date) {
+      const groups = chatMessages.querySelectorAll(".message-group[data-time]");
+      if (!groups.length) return;
+      const lastDate = new Date(groups[groups.length - 1].dataset.time);
+      if (isSameDay(lastDate, date)) return;
+      const sep = document.createElement("div");
+      sep.className = "date-separator";
+      sep.innerHTML = `<span>${formatDateLabel(date)}</span>`;
+      chatMessages.appendChild(sep);
+    }
+
+    // Refresh all relative timestamps every 30 seconds
+    setInterval(() => {
+      chatMessages.querySelectorAll(".message-group[data-time]").forEach(group => {
+        const meta = group.querySelector(".message-meta");
+        if (meta) meta.textContent = formatRelativeTime(new Date(group.dataset.time));
+      });
+    }, 30_000);
+
+    // ── Render helpers ─────────────────────────────────────────────────────────
+    function scrollToBottom() {
+      document.querySelector(".chat-body").scrollTop = 9999;
+    }
+
+    function addUserMessage(text) {
+      const now   = new Date();
+      maybeInsertDateSeparator(now);
+      const group = document.createElement("div");
+      group.className = "message-group";
+      group.innerHTML = `
+        <div class="user-bubble-row">
+          <div class="user-bubble"></div>
+        </div>
+        <div class="message-meta"></div>
+      `;
+      group.querySelector(".user-bubble").textContent = text;
+      stampGroup(group, now);
+      chatMessages.appendChild(group);
+      scrollToBottom();
+    }
+
+    function addTypingIndicator() {
+      const group = document.createElement("div");
+      group.className = "message-group";
+      group.innerHTML = `
+        <div class="agent-label">
+          <img src="assets/newmindstart-mark.svg" alt="" />
+          <span>NMS Companion</span>
+        </div>
+        <div class="companion-shell">
+          <div class="companion-bubble">
+            <div class="typing"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+        <div class="message-meta">typing…</div>
+      `;
+      chatMessages.appendChild(group);
+      scrollToBottom();
+      return group;
+    }
+
+    function addAssistantMessage(text) {
+      const now   = new Date();
+      maybeInsertDateSeparator(now);
+      const group = document.createElement("div");
+      group.className = "message-group";
+      group.innerHTML = `
+        <div class="agent-label">
+          <img src="assets/newmindstart-mark.svg" alt="" />
+          <span>NMS Companion</span>
+        </div>
+        <div class="companion-shell">
+          <div class="companion-bubble"></div>
+        </div>
+        <div class="message-meta"></div>
+      `;
+      group.querySelector(".companion-bubble").innerHTML = renderMarkdown(text);
+      stampGroup(group, now);
+      chatMessages.appendChild(group);
+      scrollToBottom();
+    }
+
+    // ── Send a message ─────────────────────────────────────────────────────────
+    async function sendMessage(prefilled) {
+      const text = (prefilled ?? chatInput.value).trim();
+      if (!text) return;
+
+      collapseChips();
+      addUserMessage(text);
+      conversation.push({ role: "user", content: text });
+
+      chatInput.value = "";
+      inputRow.classList.remove("has-text");
+
+      const typingGroup = addTypingIndicator();
+
+      try {
+        const response = await fetch("http://localhost:3030/api/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...userContext, message: text, conversation }),
+        });
+
+        const data = await response.json();
+        typingGroup.remove();
+
+        if (!response.ok) throw new Error(data.detail ?? data.error ?? "Request failed.");
+
+        const reply = data.reply?.message ?? "No response returned.";
+        conversation.push({ role: "assistant", content: reply });
+        addAssistantMessage(reply);
+
+      } catch (err) {
+        typingGroup.remove();
+        addAssistantMessage(
+          "I couldn't reach the server. Make sure it's running on `http://localhost:3030` and that `OPENAI_API_KEY` is set in `.env`."
+        );
+      }
+    }
+
+    // ── Input field state (idle → has-text) ────────────────────────────────────
+    chatInput.addEventListener("input", () => {
+      inputRow.classList.toggle("has-text", chatInput.value.trim().length > 0);
+    });
+
+    sendButton.addEventListener("click", () => sendMessage());
+    chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+
+    // ── Quick-reply chips ──────────────────────────────────────────────────────
+    quickReplies.addEventListener("click", (e) => {
+      const chip = e.target.closest(".quick-reply");
+      if (!chip) return;
+      quickReplies.querySelectorAll(".quick-reply").forEach((c) => c.classList.remove("selected"));
+      chip.classList.add("selected");
+      sendMessage(chip.textContent.trim());
+    });
+
+    // ── Collapse / expand ──────────────────────────────────────────────────────
+    btnExpand.addEventListener("click", () => {
+      const collapsed = chatWidget.classList.toggle("collapsed");
+      btnExpand.classList.toggle("is-collapsed", collapsed);
+      btnExpand.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
+    });
+
+    // ── Close → mini bubble / Re-open ─────────────────────────────────────────
+    btnClose.addEventListener("click", () => {
+      chatWidget.classList.add("hidden");
+      chatBubble.classList.add("visible");
+    });
+
+    chatBubble.addEventListener("click", () => {
+      chatWidget.classList.remove("hidden", "collapsed");
+      chatBubble.classList.remove("visible");
+      btnExpand.classList.remove("is-collapsed");
+      btnExpand.setAttribute("aria-label", "Collapse");
+    });
+  </script>
+
+</body>
+</html>
