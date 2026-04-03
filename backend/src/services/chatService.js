@@ -1,13 +1,27 @@
 import { getUserContext } from "../data/mockData.js";
+import { findRelevantCourses, formatCourseForPrompt, serializeCourseForClient } from "./courseService.js";
+import { findRelevantEvents, serializeEventForClient } from "./eventService.js";
 
 const MODEL       = process.env.OPENAI_MODEL    || "gpt-4o-mini";
 const OPENAI_URL  = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(ctx) {
+function buildSystemPrompt(ctx, courses = []) {
+  const courseBlock = courses.length
+    ? `
+RELEVANT NMS COURSES (you MUST reference these):
+${courses.map(formatCourseForPrompt).join("\n")}
+
+RESPONSE FORMAT — follow this every time:
+1. Give 2–4 lines of concise, practical advice on the user's question.
+2. Then add a short bridge sentence (e.g. "To go deeper on this, we have something just for you on NMS:").
+3. Then name 1–2 of the courses above — title only, no URL needed (the widget shows the card).
+Keep the whole reply under 120 words. Do not write long paragraphs.`
+    : "\nKeep your reply concise — under 100 words. No long paragraphs.";
+
   return `
-You are an NMS Health Coach — a warm, knowledgeable personal wellness assistant on the NewMindStart platform.
+You are an NMS Wellness Companion — a warm, knowledgeable personal wellness assistant on the NewMindStart platform.
 
 Your role:
 - Help users build healthy habits around sleep, stress, nutrition, fitness, and mindfulness
@@ -20,7 +34,7 @@ How to respond:
 - Offer 1–3 concrete next actions when a user seems unsure where to start
 - Ask a brief follow-up question when it would help you give better guidance
 - Personalise answers using the user context below when relevant
-
+${courseBlock}
 Safety rules:
 - Do not diagnose medical conditions or prescribe treatments or medications
 - If a user describes symptoms that may need medical attention, encourage them to see a healthcare professional
@@ -40,7 +54,7 @@ User context:
  * the OpenAI Chat Completions API expects.
  * We keep the last 10 turns to stay well within context limits.
  */
-function buildMessages({ conversation = [], message, ctx }) {
+function buildMessages({ conversation = [], message, ctx, courses }) {
   const history = conversation
     .slice(-10)
     .filter((m) => m?.role && m?.content)
@@ -50,7 +64,7 @@ function buildMessages({ conversation = [], message, ctx }) {
     }));
 
   return [
-    { role: "system",    content: buildSystemPrompt(ctx) },
+    { role: "system",    content: buildSystemPrompt(ctx, courses) },
     ...history,
     { role: "user",      content: message },
   ];
@@ -89,16 +103,24 @@ async function callOpenAI(messages) {
 export async function createChatResponse(payload) {
   const ctx = { ...getUserContext(payload.userId), ...payload };
 
+  const [courses, events] = await Promise.all([
+    findRelevantCourses(payload.message),
+    findRelevantEvents(payload.message),
+  ]);
+
   const messages = buildMessages({
     conversation: payload.conversation,
     message: payload.message,
     ctx,
+    courses,
   });
 
   const answer = await callOpenAI(messages);
 
   return {
-    reply: { message: answer },
-    meta:  { model: MODEL, source: "openai" },
+    reply:   { message: answer },
+    courses: courses.map(serializeCourseForClient),
+    events:  events.map(serializeEventForClient),
+    meta:    { model: MODEL, source: "openai" },
   };
 }

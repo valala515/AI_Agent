@@ -143,6 +143,135 @@
     // Tracks whether quick-reply chips have been moved to the compact strip
     let chipsCollapsed = false;
 
+    // ── Interest & seen-course tracking (persisted in localStorage) ───────────
+    const STORAGE_INTERESTS = "nms_interests";
+    const STORAGE_SEEN      = "nms_notified_ids";
+    const STOP_WORDS        = new Set(["that","this","with","have","from","they","will",
+      "what","when","more","also","about","your","just","like","very","some","been",
+      "want","need","feel","help","make","know","think","time","good","better","really"]);
+
+    function getInterests() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_INTERESTS) ?? "[]"); }
+      catch { return []; }
+    }
+
+    function addInterests(text) {
+      const words   = text.toLowerCase().replace(/[^a-z0-9\s]/g,"").split(/\s+/)
+                        .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+      const current = new Set(getInterests());
+      words.forEach(w => current.add(w));
+      // Keep the 40 most recent unique interests
+      const trimmed = [...current].slice(-40);
+      localStorage.setItem(STORAGE_INTERESTS, JSON.stringify(trimmed));
+    }
+
+    function getSeenIds() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_SEEN) ?? "[]"); }
+      catch { return []; }
+    }
+
+    function markAsSeen(courseId) {
+      const seen = new Set(getSeenIds());
+      seen.add(courseId);
+      localStorage.setItem(STORAGE_SEEN, JSON.stringify([...seen]));
+    }
+
+    // ── Proactive notifications ────────────────────────────────────────────────
+    async function loadNotifications() {
+      const interests = getInterests();
+      const seenIds   = getSeenIds();
+      const params    = new URLSearchParams({
+        interests: interests.join(","),
+        seen:      seenIds.join(","),
+      });
+      try {
+        const res  = await fetch(`http://localhost:3030/api/assistant/notifications?${params}`);
+        const data = await res.json();
+        return data.notifications ?? [];
+      } catch { return []; }
+    }
+
+    function renderNotification(n) {
+      if (n.type === "event" && !n.event) return; // placeholder — skip until events API live
+
+      const wrap = document.createElement("div");
+      wrap.className = "notification-bubble";
+
+      if (n.type === "new_course") {
+        const c = n.course;
+        wrap.innerHTML = `
+          <div class="notif-header">
+            <span class="notif-icon">✨</span>
+            <span class="notif-label">Just released for you</span>
+          </div>
+          <div class="notif-text">We just added a new course that matches your interests — and it's already trending!</div>
+          <a class="notif-card" href="${c.url}" target="_blank" rel="noopener">
+            ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
+            <div class="notif-card-body">
+              <span class="notif-card-title">${c.title}</span>
+              ${c.author ? `<span class="notif-card-sub">${c.author}</span>` : ""}
+              <span class="notif-card-proof">🔥 ${n.watching} people joining this course</span>
+            </div>
+          </a>
+        `;
+        if (c.id) markAsSeen(c.id);
+      }
+
+      if (n.type === "popular_course") {
+        const c = n.course;
+        wrap.innerHTML = `
+          <div class="notif-header">
+            <span class="notif-icon">⭐</span>
+            <span class="notif-label">Popular in your area of interest</span>
+          </div>
+          <div class="notif-text">Based on your interests, this highly-rated course might be exactly what you need.</div>
+          <a class="notif-card" href="${c.url}" target="_blank" rel="noopener">
+            ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
+            <div class="notif-card-body">
+              <span class="notif-card-title">${c.title}</span>
+              ${c.author ? `<span class="notif-card-sub">${c.author}</span>` : ""}
+              ${c.rating ? `<span class="notif-card-rating">★ ${c.rating}</span>` : ""}
+            </div>
+          </a>
+        `;
+        if (c.id) markAsSeen(c.id);
+      }
+
+      if (n.type === "event" && n.event) {
+        const e = n.event;
+        wrap.innerHTML = `
+          <div class="notif-header">
+            <span class="notif-icon">🗓</span>
+            <span class="notif-label">Upcoming community event</span>
+          </div>
+          <div class="notif-text">There's a live event coming up that might be interesting for you.</div>
+          <a class="notif-card" href="${e.url}" target="_blank" rel="noopener">
+            ${e.thumb ? `<img src="${e.thumb}" alt="" loading="lazy" />` : ""}
+            <div class="notif-card-body">
+              <span class="notif-card-title">${e.title}</span>
+              ${e.host ? `<span class="notif-card-sub">${e.host}</span>` : ""}
+              ${e.date ? `<span class="notif-card-rating">${new Date(e.date).toLocaleDateString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>` : ""}
+            </div>
+          </a>
+        `;
+      }
+
+      if (wrap.innerHTML) chatMessages.appendChild(wrap);
+    }
+
+    // Show notifications 6 seconds after chat opens — only on first open per session
+    const NOTIF_SHOWN_KEY = "nms_notif_shown";
+    if (!sessionStorage.getItem(NOTIF_SHOWN_KEY)) {
+      setTimeout(async () => {
+        const notifs = await loadNotifications();
+        notifs.forEach(renderNotification);
+        if (notifs.some(n => n.type !== "event" || n.event)) {
+          sessionStorage.setItem(NOTIF_SHOWN_KEY, "1");
+          scrollToBottom?.();
+        }
+      }, 6000);
+    }
+
     function collapseChips() {
       if (chipsCollapsed) return;
       chipsCollapsed = true;
@@ -271,7 +400,7 @@ What would you like to work on today?
       return group;
     }
 
-    function addAssistantMessage(text) {
+    function addAssistantMessage(text, courses = [], events = []) {
       const now   = new Date();
       maybeInsertDateSeparator(now);
       const group = document.createElement("div");
@@ -287,6 +416,49 @@ What would you like to work on today?
         <div class="message-meta"></div>
       `;
       group.querySelector(".companion-bubble").innerHTML = renderMarkdown(text);
+      const meta = group.querySelector(".message-meta");
+
+      // ── Course cards (scrollable row inside the bubble frame) ──
+      if (courses.length) {
+        const cards = document.createElement("div");
+        cards.className = "course-cards";
+        cards.innerHTML = courses.map(c => `
+          <a class="course-card" href="${c.url}" target="_blank" rel="noopener">
+            <div class="course-card-thumb">
+              ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
+            </div>
+            <div class="course-card-body">
+              <span class="course-card-title">${c.title}</span>
+              ${c.author ? `<span class="course-card-author">${c.author}</span>` : ""}
+              ${c.rating ? `<span class="course-card-rating">★ ${c.rating}</span>` : ""}
+            </div>
+          </a>
+        `).join("");
+        meta.before(cards);
+      }
+
+      // ── Event cards (separate row below courses) ──
+      if (events.length) {
+        const evtSection = document.createElement("div");
+        evtSection.className = "event-section";
+        evtSection.innerHTML = `
+          <div class="event-section-label">🗓 Upcoming community events</div>
+          <div class="event-cards">
+            ${events.map(e => `
+              <a class="event-card" href="${e.url}" target="_blank" rel="noopener">
+                ${e.thumb ? `<img class="event-card-thumb" src="${e.thumb}" alt="" loading="lazy" />` : ""}
+                <div class="event-card-body">
+                  <span class="event-card-title">${e.title}</span>
+                  ${e.host ? `<span class="event-card-host">${e.host}</span>` : ""}
+                  ${e.date ? `<span class="event-card-date">${new Date(e.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>` : ""}
+                </div>
+              </a>
+            `).join("")}
+          </div>
+        `;
+        meta.before(evtSection);
+      }
+
       stampGroup(group, now);
       chatMessages.appendChild(group);
       scrollToBottom();
@@ -298,6 +470,7 @@ What would you like to work on today?
       if (!text) return;
 
       collapseChips();
+      addInterests(text);
       addUserMessage(text);
       conversation.push({ role: "user", content: text });
 
@@ -318,9 +491,11 @@ What would you like to work on today?
 
         if (!response.ok) throw new Error(data.detail ?? data.error ?? "Request failed.");
 
-        const reply = data.reply?.message ?? "No response returned.";
+        const reply   = data.reply?.message ?? "No response returned.";
+        const courses = data.courses ?? [];
+        const events  = data.events  ?? [];
         conversation.push({ role: "assistant", content: reply });
-        addAssistantMessage(reply);
+        addAssistantMessage(reply, courses, events);
 
       } catch (err) {
         typingGroup.remove();
@@ -344,6 +519,7 @@ What would you like to work on today?
       if (!chip) return;
       quickReplies.querySelectorAll(".quick-reply").forEach((c) => c.classList.remove("selected"));
       chip.classList.add("selected");
+      addInterests(chip.textContent.trim());
       sendMessage(chip.textContent.trim());
     });
 

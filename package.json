@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node backend/src/server.js",
-    "start": "node backend/src/server.js"
+    "start": "node backend/src/server.js",
+    "sync": "node scripts/syncCourses.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

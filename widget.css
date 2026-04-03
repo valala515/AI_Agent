@@ -311,6 +311,171 @@ body {
   margin: 10px 0;
 }
 
+/* ── Course cards (recommended courses below AI reply) ──────────────────────── */
+.course-cards {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 3px;        /* room for card shadow */
+}
+.course-cards::-webkit-scrollbar { display: none; }
+
+.course-card {
+  flex-shrink: 0;
+  width: 160px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: white;
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(34, 35, 35, 0.07);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.course-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(34, 35, 35, 0.13);
+}
+
+.course-card-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--cream);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.course-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.course-card-body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.course-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.course-card-author {
+  font-size: 10px;
+  color: var(--gray);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.course-card-rating {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--orange);
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* ── Event section (below course cards) ─────────────────────────────────────── */
+.event-section {
+  margin-top: 10px;
+}
+
+.event-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+  padding-left: 2px;
+}
+
+.event-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.event-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: white;
+  text-decoration: none;
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(34, 35, 35, 0.05);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.event-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(34, 35, 35, 0.10);
+}
+
+.event-card-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--cream);
+}
+
+.event-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.event-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.event-card-host {
+  font-size: 10px;
+  color: var(--gray);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-card-date {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--orange);
+  margin-top: 2px;
+}
+
 /* ── Typing indicator ───────────────────────────────────────────────────────── */
 .typing {
   display: inline-flex;
@@ -635,4 +800,120 @@ body {
   .companion-bubble { font-size: 13px; }
 
   .chat-bubble { bottom: 20vh; }
+}
+
+/* ── Notification bubbles ───────────────────────────────────────────────────── */
+
+.notification-bubble {
+  position: fixed;
+  bottom: 100px;
+  right: 24px;
+  width: 300px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(34, 35, 35, 0.16);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+  animation: notif-slide-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  cursor: pointer;
+}
+
+.notification-bubble:hover { box-shadow: 0 12px 40px rgba(34, 35, 35, 0.22); }
+
+@keyframes notif-slide-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notif-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--orange);
+}
+
+.notif-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--gray);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  margin-left: auto;
+  opacity: 0.6;
+}
+.notif-dismiss:hover { opacity: 1; }
+
+.notif-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.notif-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--line);
+}
+
+.notif-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.notif-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notif-card-sub {
+  font-size: 11px;
+  color: var(--gray);
+}
+
+.notif-card-proof {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--orange);
+}
+
+.notif-card-rating {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f5a623;
+}
+
+.notif-text {
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .notification-bubble {
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
 }
