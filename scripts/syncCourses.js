@@ -33,7 +33,7 @@ const NMS_BASE = process.env.NMS_API_URL  || "https://newmindstart.com";
 const NMS_KEY  = process.env.NMS_BOT_KEY;
 const OUT_PATH = path.join(projectRoot, "backend", "src", "data", "courses.json");
 
-// ── Fetch ─────────────────────────────────────────────────────────────────────
+// ── Fetch course list ─────────────────────────────────────────────────────────
 async function fetchAllCourses() {
   if (!NMS_KEY) throw new Error("NMS_BOT_KEY is not set in .env");
 
@@ -64,6 +64,71 @@ async function fetchAllCourses() {
   return all;
 }
 
+// ── Fetch full description for one course ─────────────────────────────────────
+async function fetchCourseBody(id) {
+  const url = `${NMS_BASE}/api/courses/${id}`;
+  const res = await fetch(url, {
+    headers: { "Accept": "application/json", "x-bot-key": NMS_KEY },
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+
+  let raw = json.description ?? json.data?.description ?? null;
+  if (!raw) return null;
+
+  // description is a JSON string containing an array of content blocks
+  let blocks;
+  try {
+    blocks = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(blocks)) return null;
+
+  // Collect all text content from blocks — skip list items (usually bullet points
+  // that duplicate the excerpt) unless they're the only content.
+  const parts = [];
+  for (const block of blocks) {
+    const t = block.text ?? block.subtitle ?? null;
+    if (t && typeof t === "string") {
+      // Strip markdown bold/italic markers and HTML tags
+      const clean = t
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1")
+        .replace(/_([^_]+)_/g, "$1")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (clean.length > 20) parts.push(clean);
+    }
+    // Also grab list items
+    if (Array.isArray(block.list)) {
+      for (const item of block.list) {
+        const s = typeof item === "string" ? item : item?.text ?? "";
+        const clean = s.replace(/<[^>]+>/g, " ").replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1").trim();
+        if (clean.length > 10) parts.push(clean);
+      }
+    }
+  }
+
+  return parts.join(" ").slice(0, 2000) || null;
+}
+
+// ── Enrich courses with full landing page bodies (batched) ────────────────────
+async function enrichWithBodies(courses, batchSize = 5) {
+  const results = [];
+  for (let i = 0; i < courses.length; i += batchSize) {
+    const batch = courses.slice(i, i + batchSize);
+    const bodies = await Promise.all(batch.map((c) => fetchCourseBody(c.id)));
+    for (let j = 0; j < batch.length; j++) {
+      results.push({ ...batch[j], body: bodies[j] ?? null });
+    }
+    process.stdout.write(`  Enriched ${Math.min(i + batchSize, courses.length)}/${courses.length} courses\r`);
+  }
+  console.log(); // newline after \r progress
+  return results;
+}
+
 // ── Normalise ─────────────────────────────────────────────────────────────────
 // Strip heavy fields we never use (vimeo_folder, admin_description, etc.)
 // to keep the file small and focused on what the AI actually needs.
@@ -84,6 +149,7 @@ function normaliseCourse(c) {
     rating:     c.rating     ?? null,
     thumb:      c.thumb_big  ?? null,
     excerpt:    excerpt.slice(0, 300),
+    body:       c.body       ?? null,
     lang:       c.lang       ?? c.locale ?? null,
     created_at: c.created_at ?? null,
   };
@@ -93,7 +159,9 @@ function normaliseCourse(c) {
 async function run() {
   console.log("🔄  Syncing NMS course catalogue…");
   const raw        = await fetchAllCourses();
-  const normalised = raw.map(normaliseCourse);
+  console.log(`  Fetched ${raw.length} courses. Enriching with full descriptions…`);
+  const enriched   = await enrichWithBodies(raw);
+  const normalised = enriched.map(normaliseCourse);
 
   // English-only — never recommend Russian-language courses
   const englishOnly = normalised.filter(c => !c.lang || c.lang === "en");

@@ -1,0 +1,80 @@
+{
+  "id": 1301,
+  "slug": "fix-your-knees-reset-your-knees-rebuild-your-whole-body",
+  "title": "Fix Your Knees: Reset Your Knees — Rebuild Your Whole Body",
+  "author": "Example Author",
+  "rating": 4.8,
+  "thumb": "https://newmindstart.com/example-thumb.jpg",
+  "lang": "en",
+  "created_at": "2026-04-03T06:55:19.578Z",
+  "excerpt": "Marketing-facing excerpt from the landing page.",
+  "recommendation_summary": "Gentle knee-focused movement program for restoring mobility and confidence after strain or limited movement.",
+  "retrieval_text": "Physical recovery course for knees. Best for rebuilding mobility, flexibility, and lower-body confidence. Not for emotional healing or creative expression. Suitable for gentle recovery intent.",
+  "primary_domain": "physical_recovery",
+  "secondary_domains": [
+    "pain_relief",
+    "movement_fitness"
+  ],
+  "primary_intent": "mobility_recovery",
+  "secondary_intents": [
+    "strength_building",
+    "flexibility",
+    "joint_support"
+  ],
+  "body_areas": [
+    "knee",
+    "full_body"
+  ],
+  "pain_type": "physical",
+  "symptom_tags": [
+    "stiffness",
+    "reduced_range_of_motion",
+    "weakness",
+    "joint_discomfort"
+  ],
+  "goal_tags": [
+    "restore_strength",
+    "restore_flexibility",
+    "move_with_confidence"
+  ],
+  "context_tags": [
+    "beginner",
+    "physical_rehab"
+  ],
+  "modality_tags": [
+    "gentle_movement",
+    "mobility",
+    "therapeutic_exercise"
+  ],
+  "audience_tags": [
+    "adult"
+  ],
+  "life_stage_tags": [],
+  "energy_level": "low_to_medium",
+  "difficulty_level": "beginner",
+  "time_commitment": "10_min_daily",
+  "safety_flags": [
+    "avoid_for_acute_injury_without_medical_clearance"
+  ],
+  "contraindication_flags": [],
+  "exclusion_tags": [
+    "not_emotional_release",
+    "not_creative_therapy",
+    "not_spiritual_practice"
+  ],
+  "recommendation_priority": 0.94,
+  "keyword_aliases": [
+    "knee rehab",
+    "knee recovery",
+    "restore knee mobility",
+    "joint flexibility"
+  ],
+  "freshness_score": 0.81,
+  "popularity_score": 0.67,
+  "completion_score": 0.72,
+  "embedding": [
+    0.0123,
+    -0.0876,
+    0.0312
+  ]
+}

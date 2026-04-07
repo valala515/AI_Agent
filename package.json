@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node backend/src/server.js",
     "start": "node backend/src/server.js",
-    "sync": "node scripts/syncCourses.js"
+    "sync": "node scripts/syncCourses.js",
+    "build:lessons": "node scripts/buildLessonIndex.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

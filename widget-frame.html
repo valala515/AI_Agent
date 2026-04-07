@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NMS Wellness Companion</title>
+  <link rel="stylesheet" href="/widget.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <style>
+    /* ── Frame overrides: fill the entire iframe, no fixed positioning ── */
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+    body {
+      background: transparent !important;
+    }
+    .chat-widget {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      right: auto !important;
+      bottom: auto !important;
+    }
+    /* Collapsed state must override the height:100% frame reset */
+    .chat-widget.collapsed { height: 54px !important; min-height: 0 !important; }
+    .chat-widget.hidden { display: none !important; opacity: 1 !important; transform: none !important; }
+  </style>
+</head>
+<body>
+
+  <section class="chat-widget" id="chat-widget" aria-label="NMS Health Coach">
+
+    <!-- Topbar -->
+    <header class="chat-topbar">
+      <div class="chat-brand">
+        <img class="chat-brand-mark" src="/assets/newmindstart-mark.svg" alt="" />
+        <span class="chat-brand-title">Your NMS Wellness Companion</span>
+      </div>
+      <div class="chat-actions">
+        <button class="chat-action" id="btn-sound" type="button" aria-label="Mute chat sounds" aria-pressed="false">
+          <svg class="icon-sound-on" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="4,8 7.5,8 11,5 11,15 7.5,12 4,12"></polygon>
+            <path d="M13.2 7.2a4 4 0 0 1 0 5.6"></path>
+            <path d="M14.9 5.5a6.5 6.5 0 0 1 0 9"></path>
+          </svg>
+          <svg class="icon-sound-off" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="4,8 7.5,8 11,5 11,15 7.5,12 4,12"></polygon>
+            <line x1="14" y1="7" x2="17" y2="13"></line>
+            <line x1="17" y1="7" x2="14" y2="13"></line>
+          </svg>
+        </button>
+        <!-- Close sends a message to the parent page to hide the iframe -->
+        <button class="chat-action" id="btn-close" type="button" aria-label="Close">×</button>
+      </div>
+    </header>
+
+    <!-- Message thread -->
+    <div class="chat-body">
+      <div id="chat-messages">
+        <div class="message-group" id="greeting-group">
+          <div class="agent-label">
+            <img src="/assets/newmindstart-mark.svg" alt="" />
+            <span>NMS Companion</span>
+          </div>
+          <div class="companion-shell">
+            <div class="companion-bubble" id="greeting-bubble">
+              <div class="typing" id="typing-indicator">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+          </div>
+          <div class="message-meta">now</div>
+        </div>
+      </div>
+
+      <!-- Quick-reply chips -->
+      <div class="quick-replies" id="quick-replies">
+        <div class="quick-reply">🌅 Build a morning routine</div>
+        <div class="quick-reply">🧠 5-min mindfulness</div>
+        <div class="quick-reply">🧘 Reduce stress today</div>
+        <div class="quick-reply">💪 Start exercising more</div>
+        <div class="quick-reply">🥗 Eat for more energy</div>
+        <div class="quick-reply">😴 Help me sleep better</div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="chat-input-area">
+      <div class="chat-input-row" id="input-row">
+        <div class="input-idle-label" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor">
+            <path d="M230.15,70.54,185.46,25.86a20,20,0,0,0-28.28,0L33.86,149.17A19.86,19.86,0,0,0,28,163.31V208a20,20,0,0,0,20,20H216a12,12,0,0,0,0-24H125L230.15,98.83A20,20,0,0,0,230.15,70.54ZM91,204H52V165l84-84,39,39ZM192,103,153,64l18.34-18.34,39,39Z"/>
+          </svg>
+          <span>Ask me anything…</span>
+        </div>
+        <input class="chat-input" id="chat-input" placeholder="" aria-label="Message" />
+        <button class="send-button" id="send-button" type="button" aria-label="Send">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <p class="footer-note">AI may make mistakes · not a substitute for professional medical advice</p>
+    </div>
+
+  </section>
+
+  <script>
+    // ── Analytics tracking ────────────────────────────────────────────────────
+    const _analyticsSession = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+    // userId is resolved later (after userContext is built), so we reference
+    // userContext directly at call time — not captured at definition time.
+    function track(event, data = {}) {
+      const payload = JSON.stringify({
+        event,
+        sessionId: _analyticsSession,
+        userId:    (typeof userContext !== "undefined" ? userContext.userId : null),
+        ...data,
+      });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(
+            "/api/assistant/analytics/track",
+            new Blob([payload], { type: "application/json" })
+          );
+        } else {
+          fetch("/api/assistant/analytics/track", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: payload, keepalive: true,
+          });
+        }
+      } catch {}
+    }
+
+    // ── Markdown helper ────────────────────────────────────────────────────────
+    marked.use({ breaks: true, gfm: true });
+    function renderMarkdown(text) {
+      return DOMPurify.sanitize(marked.parse(text));
+    }
+
+    // ── Element references ─────────────────────────────────────────────────────
+    const chatWidget   = document.getElementById("chat-widget");
+    const chatMessages = document.getElementById("chat-messages");
+    const quickReplies = document.getElementById("quick-replies");
+    const inputRow     = document.getElementById("input-row");
+    const chatInput    = document.getElementById("chat-input");
+    const sendButton   = document.getElementById("send-button");
+    const btnSound     = document.getElementById("btn-sound");
+    const btnClose     = document.getElementById("btn-close");
+
+    // ── User context ───────────────────────────────────────────────────────────
+    // userId comes from the ?userId= URL param set by widget.js (which reads
+    // window.NMSWidget.userId from the host page). Falls back to a localStorage
+    // guest ID so it stays stable across refreshes without a login.
+    const _urlUserId = new URLSearchParams(window.location.search).get("userId");
+    const userContext = {
+      userId:            _urlUserId || localStorage.getItem("nms_guest_id") || "guest",
+      subscriptionState: "subscribed",
+      currentFocus:      "stress & sleep",
+      healthGoals:       ["stress management", "better sleep", "mindfulness"],
+    };
+
+    // Fire chat_opened now that userId is resolved
+    track("chat_opened");
+
+    const conversation = [];
+    let chipsCollapsed = false;
+
+    // ── Interest tracking ─────────────────────────────────────────────────────
+    const STORAGE_INTERESTS = "nms_interests";
+    const STORAGE_PROFILE   = "nms_profile";
+    const STOP_WORDS        = new Set(["that","this","with","have","from","they","will",
+      "what","when","more","also","about","your","just","like","very","some","been",
+      "want","need","feel","help","make","know","think","time","good","better","really"]);
+
+    // ── User profile (persisted across sessions) ──────────────────────────────
+    // Fields: gender, ageGroup, workStyle, activityLevel, physicalState,
+    //         concernType, hasKids
+    function getUserProfile() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_PROFILE) ?? "{}"); }
+      catch { return {}; }
+    }
+
+    function saveProfileField(field, value) {
+      const profile = getUserProfile();
+      profile[field] = value;
+      localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+      track("user_context_captured", { field, value });
+      // Persist to server so profile survives across devices and sessions
+      fetch(`/api/profile/${userContext.userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field, value }),
+      }).catch(() => {});
+    }
+
+    // On init: fetch server profile and merge into localStorage
+    // (server is source of truth for cross-session/cross-device data)
+    fetch(`/api/profile/${userContext.userId}`)
+      .then((r) => r.ok ? r.json() : {})
+      .then((serverProfile) => {
+        if (!serverProfile || !Object.keys(serverProfile).length) return;
+        const local  = getUserProfile();
+        // Local overrides server for fields set in this session already
+        const merged = { ...serverProfile, ...local };
+        localStorage.setItem(STORAGE_PROFILE, JSON.stringify(merged));
+      })
+      .catch(() => {});
+
+    // Map chip labels → profile field + value pairs so clicking a chip
+    // automatically persists the right data.
+    const CHIP_PROFILE_MAP = {
+      // Gender
+      "👨 Male":            { field: "gender",        value: "male" },
+      "👩 Female":          { field: "gender",        value: "female" },
+      "🌈 Non-binary":      { field: "gender",        value: "non-binary" },
+      "🤐 Prefer not to say":{ field: "gender",       value: "prefer_not" },
+      // Age
+      "🌱 Under 30":        { field: "ageGroup",      value: "under30" },
+      "💫 30–45":           { field: "ageGroup",      value: "30s" },
+      "🔥 45–60":           { field: "ageGroup",      value: "40s" },
+      "🌿 60+":             { field: "ageGroup",      value: "50plus" },
+      // Physical state
+      "💪 Generally healthy":  { field: "physicalState", value: "healthy" },
+      "🤕 Recovering from injury": { field: "physicalState", value: "recovering" },
+      "🦴 Chronic condition":  { field: "physicalState", value: "chronic" },
+      "🧘 Burnout / stress":   { field: "physicalState", value: "burnout" },
+      // Work style
+      "💼 Desk worker":     { field: "workStyle",     value: "seated" },
+      "🚶 On feet all day": { field: "workStyle",     value: "physical" },
+      "🏠 Retired / home":  { field: "workStyle",     value: "retired" },
+      "🏋️ Already active":  { field: "workStyle",     value: "active" },
+      // Concern type
+      "💪 Physical pain":   { field: "concernType",   value: "physical_pain" },
+      "💙 Emotional / stress":{ field: "concernType", value: "emotional" },
+      "⚡ Low energy":       { field: "concernType",   value: "energy" },
+      "🧠 Mental clarity":  { field: "concernType",   value: "cognitive" },
+      "🎵 Voice & expression":{ field: "concernType", value: "voice" },
+    };
+
+    const DEV_EVENT_TRIGGER = "/show-event-preview";
+    const DEV_EVENT_PREVIEW = [
+      {
+        title: "Meditation for Inner Stability",
+        date: "2026-04-07 12:00:00",
+        thumb: "https://media.mindcloud.club/84955/conversions/Copy-of-Copy-of-Copy-of-Desi-tess-2-thumb_440.jpg",
+        url: "https://us06web.zoom.us/meeting/register/Z7ZtlZDSTLGDZ6UiM0E0nw"
+      }
+    ];
+    const STORAGE_SOUND_MUTED = "nms_message_sound_muted";
+
+    function getInterests() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_INTERESTS) ?? "[]"); }
+      catch { return []; }
+    }
+
+    function addInterests(text) {
+      const words   = text.toLowerCase().replace(/[^a-z0-9\s]/g,"").split(/\s+/)
+                        .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+      const current = new Set(getInterests());
+      words.forEach(w => current.add(w));
+      localStorage.setItem(STORAGE_INTERESTS, JSON.stringify([...current].slice(-40)));
+    }
+
+    function isMessageSoundMuted() {
+      return localStorage.getItem(STORAGE_SOUND_MUTED) === "1";
+    }
+
+    function syncSoundButton() {
+      const muted = isMessageSoundMuted();
+      btnSound.classList.toggle("is-muted", muted);
+      btnSound.setAttribute("aria-pressed", String(muted));
+      btnSound.setAttribute("aria-label", muted ? "Turn chat sounds on" : "Turn chat sounds off");
+    }
+
+    function collapseChips() {
+      if (chipsCollapsed) return;
+      chipsCollapsed = true;
+      quickReplies.classList.add("compact");
+      const inputArea = chatWidget.querySelector(".chat-input-area");
+      chatWidget.insertBefore(quickReplies, inputArea);
+    }
+
+    // ── Greeting message ───────────────────────────────────────────────────────
+    const GREETING = `
+Hi there! I'm your **NMS Wellness Companion** 👋
+
+Think of me as your personal nutritionist, meditation guide, workout coach, and daily habits mentor — all in one place.
+
+I'm here to learn what *you* need and shape the experience around your goals, your lifestyle, and your pace. Whether that's building a morning routine, eating for more energy, managing stress, or finally getting better sleep — we'll figure it out together.
+
+What would you like to work on today?
+    `.trim();
+
+    window.setTimeout(() => {
+      const indicator = document.getElementById("typing-indicator");
+      const bubble    = document.getElementById("greeting-bubble");
+      if (indicator) indicator.remove();
+      if (bubble)    bubble.innerHTML = renderMarkdown(GREETING);
+      const greetingGroup = document.getElementById("greeting-group");
+      if (greetingGroup) stampGroup(greetingGroup, new Date());
+    }, 900);
+
+    // ── Timestamp utilities ────────────────────────────────────────────────────
+    function formatRelativeTime(date) {
+      const diffMs  = Date.now() - date;
+      const diffMin = Math.floor(diffMs / 60_000);
+      const diffHr  = Math.floor(diffMs / 3_600_000);
+      const diffDay = Math.floor(diffMs / 86_400_000);
+      if (diffMin < 1)  return "now";
+      if (diffMin < 60) return diffMin === 1 ? "1 min ago" : `${diffMin} min ago`;
+      if (diffHr  < 24) return diffHr  === 1 ? "1 hr ago"  : `${diffHr} hr ago`;
+      if (diffDay === 1) return "yesterday";
+      if (diffDay <  7) return `${diffDay} days ago`;
+      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function isSameDay(a, b) {
+      return a.getFullYear() === b.getFullYear() &&
+             a.getMonth()    === b.getMonth()    &&
+             a.getDate()     === b.getDate();
+    }
+
+    function formatDateLabel(date) {
+      const now  = new Date();
+      const diff = Math.floor((now - date) / 86_400_000);
+      if (isSameDay(date, now)) return "Today";
+      if (diff < 2)             return "Yesterday";
+      if (diff < 7)             return date.toLocaleDateString(undefined, { weekday: "long" });
+      return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+    }
+
+    function stampGroup(group, date) {
+      group.dataset.time = date.toISOString();
+      const meta = group.querySelector(".message-meta");
+      if (meta) meta.textContent = formatRelativeTime(date);
+    }
+
+    function maybeInsertDateSeparator(date) {
+      const groups = chatMessages.querySelectorAll(".message-group[data-time]");
+      if (!groups.length) return;
+      const lastDate = new Date(groups[groups.length - 1].dataset.time);
+      if (isSameDay(lastDate, date)) return;
+      const sep = document.createElement("div");
+      sep.className = "date-separator";
+      sep.innerHTML = `<span>${formatDateLabel(date)}</span>`;
+      chatMessages.appendChild(sep);
+    }
+
+    setInterval(() => {
+      chatMessages.querySelectorAll(".message-group[data-time]").forEach(group => {
+        const meta = group.querySelector(".message-meta");
+        if (meta) meta.textContent = formatRelativeTime(new Date(group.dataset.time));
+      });
+    }, 30_000);
+
+    // ── Render helpers ─────────────────────────────────────────────────────────
+    function scrollToBottom() {
+      document.querySelector(".chat-body").scrollTop = 9999;
+    }
+
+    function scrollToGroupTop(group) {
+      const chatBody = document.querySelector(".chat-body");
+      const label    = group.querySelector(".agent-label") ?? group;
+      requestAnimationFrame(() => {
+        const bodyRect  = chatBody.getBoundingClientRect();
+        const labelRect = label.getBoundingClientRect();
+        chatBody.scrollBy({ top: labelRect.top - bodyRect.top - 8, behavior: "smooth" });
+      });
+    }
+
+    function addUserMessage(text) {
+      const now   = new Date();
+      maybeInsertDateSeparator(now);
+      const group = document.createElement("div");
+      group.className = "message-group";
+      group.innerHTML = `
+        <div class="user-bubble-row"><div class="user-bubble"></div></div>
+        <div class="message-meta"></div>`;
+      group.querySelector(".user-bubble").textContent = text;
+      stampGroup(group, now);
+      chatMessages.appendChild(group);
+      scrollToBottom();
+    }
+
+    function addTypingIndicator() {
+      const group = document.createElement("div");
+      group.className = "message-group";
+      group.innerHTML = `
+        <div class="agent-label">
+          <img src="/assets/newmindstart-mark.svg" alt="" />
+          <span>NMS Companion</span>
+        </div>
+        <div class="companion-shell">
+          <div class="companion-bubble">
+            <div class="typing"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+        <div class="message-meta">typing…</div>`;
+      chatMessages.appendChild(group);
+      scrollToBottom();
+      return group;
+    }
+
+    function playAssistantMessageSound() {
+      if (isMessageSoundMuted()) return;
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) return;
+      try {
+        const audio = new AudioContextCtor();
+        const now = audio.currentTime;
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.018, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.33);
+        gain.connect(audio.destination);
+
+        const oscA = audio.createOscillator();
+        oscA.type = "sine";
+        oscA.frequency.setValueAtTime(659.25, now);
+        oscA.connect(gain);
+        oscA.start(now);
+        oscA.stop(now + 0.12);
+
+        const oscB = audio.createOscillator();
+        oscB.type = "sine";
+        oscB.frequency.setValueAtTime(783.99, now + 0.09);
+        oscB.connect(gain);
+        oscB.start(now + 0.09);
+        oscB.stop(now + 0.25);
+
+        oscB.onended = () => audio.close().catch(() => {});
+      } catch {}
+    }
+
+    function playEventPreviewSound() {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) return;
+      try {
+        const audio = new AudioContextCtor();
+        const now = audio.currentTime;
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.04, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+        gain.connect(audio.destination);
+
+        const oscA = audio.createOscillator();
+        oscA.type = "sine";
+        oscA.frequency.setValueAtTime(880, now);
+        oscA.connect(gain);
+        oscA.start(now);
+        oscA.stop(now + 0.16);
+
+        const oscB = audio.createOscillator();
+        oscB.type = "sine";
+        oscB.frequency.setValueAtTime(1174.66, now + 0.14);
+        oscB.connect(gain);
+        oscB.start(now + 0.14);
+        oscB.stop(now + 0.42);
+
+        oscB.onended = () => audio.close().catch(() => {});
+      } catch {}
+    }
+
+    // Build a map of courseName → matching lesson for pill injection
+    function buildLessonMap(lessons) {
+      const map = {};
+      for (const l of lessons) {
+        if (!map[l.courseName]) map[l.courseName] = l;
+      }
+      return map;
+    }
+
+    function addAssistantMessage(text, courses = [], events = [], chips = null, lessons = []) {
+      const now   = new Date();
+      maybeInsertDateSeparator(now);
+      const group = document.createElement("div");
+      group.className = "message-group";
+      group.innerHTML = `
+        <div class="agent-label">
+          <img src="/assets/newmindstart-mark.svg" alt="" />
+          <span>NMS Companion</span>
+        </div>
+        <div class="companion-shell">
+          <div class="companion-bubble"></div>
+        </div>
+        <div class="message-meta"></div>`;
+      const bubble = group.querySelector(".companion-bubble");
+      bubble.innerHTML = renderMarkdown(text);
+
+      if (courses.length) {
+        const lessonMap = buildLessonMap(lessons);
+        const cards = document.createElement("div");
+        cards.className = "course-cards";
+        courses.forEach(c => {
+          const card = document.createElement("a");
+          card.className = "course-card";
+          card.href = c.url;
+          card.target = "_blank";
+          card.rel = "noopener";
+          card.innerHTML = `
+            <div class="course-card-thumb">
+              ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
+            </div>
+            <div class="course-card-body">
+              <span class="course-card-title">${c.title}</span>
+              ${c.author ? `<span class="course-card-author">${c.author}</span>` : ""}
+              ${c.rating ? `<span class="course-card-rating">★ ${c.rating}</span>` : ""}
+            </div>`;
+          // Attach lesson pill if a matching lesson exists for this course
+          const match = lessonMap[c.title];
+          if (match) {
+            const pill = document.createElement("div");
+            pill.className = "course-card-lesson";
+            pill.innerHTML = `<span class="course-card-lesson-icon">▶</span><span class="course-card-lesson-text">Start with: ${match.lessonName}</span>`;
+            card.appendChild(pill);
+          }
+          cards.appendChild(card);
+        });
+        bubble.appendChild(cards);
+      }
+
+      if (events.length) {
+        const evtSection = document.createElement("div");
+        evtSection.className = "event-section";
+        evtSection.innerHTML = `
+          <div class="event-inline-intro">Our community is gathering soon. We'd be glad to see you there.</div>
+          <div class="event-cards">
+            ${events.map(e => `
+              <a class="event-card" href="${e.url}" target="_blank" rel="noopener">
+                ${e.thumb ? `<img class="event-card-thumb" src="${e.thumb}" alt="" loading="lazy" />` : ""}
+                <div class="event-card-body">
+                  <span class="event-card-title">${e.title}</span>
+                  ${e.date ? `<span class="event-card-date">${new Date(e.date).toLocaleDateString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>` : ""}
+                </div>
+              </a>`).join("")}
+          </div>`;
+        bubble.appendChild(evtSection);
+        playEventPreviewSound();
+      } else {
+        playAssistantMessageSound();
+      }
+
+      // ── Clarifying chips (inline, below the bubble) ──────────────────────
+      if (chips && chips.length) {
+        const chipRow = document.createElement("div");
+        chipRow.className = "response-chips";
+        chips.forEach(({ label }) => {
+          const btn = document.createElement("button");
+          btn.className = "response-chip";
+          btn.textContent = label;
+          btn.addEventListener("click", () => {
+            // Save to profile if this chip maps to a known field
+            const mapping = CHIP_PROFILE_MAP[label];
+            if (mapping) saveProfileField(mapping.field, mapping.value);
+            // Remove the entire chip row so it can't be clicked twice
+            chipRow.remove();
+            // Send the label — flagged as a chip so backend treats it as Mode A
+            sendMessage(label, { isChip: true });
+          }, { once: true });
+          chipRow.appendChild(btn);
+        });
+        group.appendChild(chipRow);
+      }
+
+      stampGroup(group, now);
+      chatMessages.appendChild(group);
+      scrollToGroupTop(group);
+    }
+
+    // ── Send a message ─────────────────────────────────────────────────────────
+    // isChip: true when called from a chip click (quick-reply or AI response chip).
+    // Tells the backend to treat the message as Mode A (course-seeking) regardless
+    // of how short or ambiguous the text looks.
+    async function sendMessage(prefilled, { isChip = false } = {}) {
+      const text = (prefilled ?? chatInput.value).trim();
+      if (!text) return;
+
+      collapseChips();
+      addInterests(text);
+      track("message_sent", { messageIndex: conversation.filter(m => m.role === "user").length, interests: getInterests() });
+      addUserMessage(text);
+      conversation.push({ role: "user", content: text });
+
+      chatInput.value = "";
+      inputRow.classList.remove("has-text");
+
+      if (text === DEV_EVENT_TRIGGER) {
+        conversation.push({ role: "assistant", content: "You won't want to miss this live session." });
+        addAssistantMessage("You won't want to miss this live session.", [], DEV_EVENT_PREVIEW);
+        return;
+      }
+
+      const typingGroup = addTypingIndicator();
+
+      try {
+        const response = await fetch("/api/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...userContext, message: text, conversation, userProfile: getUserProfile(), isChip }),
+        });
+
+        const data = await response.json();
+        typingGroup.remove();
+
+        if (!response.ok) throw new Error(data.detail ?? data.error ?? "Request failed.");
+
+        const reply   = data.reply?.message ?? "No response returned.";
+        const courses = data.courses ?? [];
+        const events  = data.events  ?? [];
+        const chips   = data.chips   ?? null;
+        const lessons = data.lessons ?? [];
+        if (courses.length) track("courses_recommended", { courseTitles: courses.map(c => c.title), count: courses.length });
+        conversation.push({ role: "assistant", content: reply });
+        addAssistantMessage(reply, courses, events, chips, lessons);
+
+      } catch (err) {
+        typingGroup.remove();
+        addAssistantMessage("I couldn't reach the server. Please try again in a moment.");
+      }
+    }
+
+    // ── Input field state ──────────────────────────────────────────────────────
+    chatInput.addEventListener("input", () => {
+      inputRow.classList.toggle("has-text", chatInput.value.trim().length > 0);
+    });
+
+    sendButton.addEventListener("click", () => sendMessage());
+    chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+    btnSound.addEventListener("click", () => {
+      const nextMuted = !isMessageSoundMuted();
+      localStorage.setItem(STORAGE_SOUND_MUTED, nextMuted ? "1" : "0");
+      syncSoundButton();
+    });
+    syncSoundButton();
+
+    // ── Course-click tracking ──────────────────────────────────────────────────
+    chatMessages.addEventListener("click", (e) => {
+      const card = e.target.closest(".course-card");
+      if (card) {
+        const title = card.querySelector(".course-card-title")?.textContent?.trim();
+        if (title) track("course_clicked", { courseTitle: title });
+        return;
+      }
+
+      const eventCard = e.target.closest(".event-card");
+      if (!eventCard) return;
+      const eventTitle = eventCard.querySelector(".event-card-title")?.textContent?.trim();
+      if (eventTitle) track("event_clicked", { eventTitle });
+    });
+
+    // ── Quick-reply chips ──────────────────────────────────────────────────────
+    quickReplies.addEventListener("click", (e) => {
+      const chip = e.target.closest(".quick-reply");
+      if (!chip) return;
+      quickReplies.querySelectorAll(".quick-reply").forEach(c => c.classList.remove("selected"));
+      chip.classList.add("selected");
+      addInterests(chip.textContent.trim());
+      sendMessage(chip.textContent.trim(), { isChip: true });
+    });
+
+
+    // ── Close → tell parent page to hide this iframe ───────────────────────────
+    btnClose.addEventListener("click", () => {
+      window.parent.postMessage({ type: "nms-widget-close" }, "*");
+    });
+  </script>
+
+</body>
+</html>

@@ -3,13 +3,44 @@
 // Fetches upcoming community events from the NMS API, caches them,
 // and exposes findRelevantEvents() for the AI response pipeline.
 //
+// Cache TTL: 30 minutes (events are time-sensitive).
+// Eager refresh: every Friday at 09:00 local server time.
+//
 // NOTE: The events endpoint needs the same Cloudflare x-bot-key bypass
 // rule as /api/courses. Until that's added, this service returns [].
 
-const NMS_BASE  = process.env.NMS_API_URL || "https://newmindstart.com";
-const CACHE_TTL = 30 * 60 * 1000; // 30 min — events change more frequently
+const NMS_BASE    = process.env.NMS_API_URL || "https://newmindstart.com";
+const CACHE_TTL   = 30 * 60 * 1000; // 30 min
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 let cache = { events: [], fetchedAt: 0 };
+
+// ─── Friday 09:00 eager refresh ───────────────────────────────────────────────
+
+function msUntilFriday9AM() {
+  const now    = new Date();
+  const target = new Date(now);
+  target.setHours(9, 0, 0, 0);
+  let daysUntil = (5 - now.getDay() + 7) % 7;
+  if (daysUntil === 0 && now.getHours() >= 9) daysUntil = 7;
+  target.setDate(now.getDate() + daysUntil);
+  return target.getTime() - now.getTime();
+}
+
+(function scheduleFridayRefresh() {
+  const delay = msUntilFriday9AM();
+  console.log(`[eventService] Next Friday refresh in ~${Math.round(delay / 3_600_000)}h`);
+  const t = setTimeout(function runRefresh() {
+    console.log("[eventService] Friday morning event refresh…");
+    fetchAllEvents().then((events) => {
+      cache.events    = events;
+      cache.fetchedAt = Date.now();
+    });
+    const next = setTimeout(runRefresh, ONE_WEEK_MS);
+    next.unref();
+  }, delay);
+  t.unref();
+}());
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -18,6 +49,82 @@ function parseAuthorName(author_info) {
     const parsed = typeof author_info === "string" ? JSON.parse(author_info) : author_info;
     return parsed?.[0]?.name ?? null;
   } catch { return null; }
+}
+
+function toAbsoluteUrl(value) {
+  if (!value || typeof value !== "string") return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("//")) return `https:${value}`;
+  if (value.startsWith("/")) return `${NMS_BASE}${value}`;
+  return `${NMS_BASE}/${value.replace(/^\.?\//, "")}`;
+}
+
+function pickThumbCandidate(source) {
+  if (!source) return null;
+
+  if (typeof source === "string") {
+    return toAbsoluteUrl(source);
+  }
+
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      const found = pickThumbCandidate(item);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (typeof source === "object") {
+    const candidates = [
+      source.url,
+      source.path,
+      source.src,
+      source.source_url,
+      source.file,
+      source.file_path,
+      source.image,
+      source.image_url,
+      source.thumb,
+      source.thumb_big,
+      source.thumbnail,
+      source.thumbnail_url,
+      source.preview,
+      source.preview_url,
+      source.original,
+      source.original_url,
+      source.full,
+      source.full_url,
+      source.formats?.thumbnail?.url,
+      source.formats?.small?.url,
+      source.formats?.medium?.url,
+      source.formats?.large?.url,
+      source.attributes?.url,
+      source.attributes?.path,
+      source.data?.attributes?.url,
+      source.data?.attributes?.path,
+    ];
+
+    for (const candidate of candidates) {
+      const found = pickThumbCandidate(candidate);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function resolveEventThumb(event) {
+  return (
+    pickThumbCandidate(event.thumb) ||
+    pickThumbCandidate(event.thumb_big) ||
+    pickThumbCandidate(event.image) ||
+    pickThumbCandidate(event.image_url) ||
+    pickThumbCandidate(event.cover) ||
+    pickThumbCandidate(event.cover_image) ||
+    pickThumbCandidate(event.banner) ||
+    pickThumbCandidate(event.media) ||
+    null
+  );
 }
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
@@ -110,8 +217,8 @@ export function serializeEventForClient(event) {
   return {
     title:     event.title,
     host:      parseAuthorName(event.author_info) ?? event.host ?? null,
-    thumb:     event.thumb ?? event.thumb_big ?? null,
+    thumb:     resolveEventThumb(event),
     date:      event.starts_at ?? event.date ?? event.start_date ?? null,
-    url:       event.url ?? `${NMS_BASE}/events/${event.slug ?? event.id}`,
+    url:       event.event_link ?? event.url ?? `${NMS_BASE}/events/${event.slug ?? event.id}`,
   };
 }

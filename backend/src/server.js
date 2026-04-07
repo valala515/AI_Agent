@@ -5,6 +5,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import assistantRoutes     from "./routes/assistantRoutes.js";
 import notificationRoutes  from "./routes/notificationRoutes.js";
+import analyticsRoutes     from "./routes/analyticsRoutes.js";
+import profileRoutes       from "./routes/profileRoutes.js";
 
 // ─── Load .env ────────────────────────────────────────────────────────────────
 // Minimal .env parser — avoids adding a dotenv dependency.
@@ -37,6 +39,8 @@ app.use(express.json());
 
 app.use("/api/assistant", assistantRoutes);
 app.use("/api/assistant", notificationRoutes);
+app.use("/api/assistant", analyticsRoutes);
+app.use("/api/profile",   profileRoutes);
 app.use(express.static(projectRoot));   // serves index.html and widget.css
 
 const PORT = process.env.PORT || 3030;

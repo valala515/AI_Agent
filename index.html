@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NMS Health Coach</title>
+  <link rel="icon" type="image/png" href="assets/favicon_ai.png" />
   <link rel="stylesheet" href="widget.css" />
   <!-- Markdown renderer + sanitiser for AI replies -->
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
@@ -28,20 +29,16 @@
           <span class="chat-brand-title">Your NMS Wellness Companion</span>
         </div>
         <div class="chat-actions">
-          <button class="chat-action" id="btn-expand" type="button" aria-label="Collapse">
-            <!-- Shown when widget is full-size → click to collapse (arrows point inward) -->
-            <svg class="icon-collapse" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="17" y1="3" x2="12" y2="8"/>
-              <polyline points="12,4 12,8 16,8"/>
-              <line x1="3" y1="17" x2="8" y2="12"/>
-              <polyline points="8,16 8,12 4,12"/>
+          <button class="chat-action" id="btn-sound" type="button" aria-label="Mute chat sounds" aria-pressed="false">
+            <svg class="icon-sound-on" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="4,8 7.5,8 11,5 11,15 7.5,12 4,12"></polygon>
+              <path d="M13.2 7.2a4 4 0 0 1 0 5.6"></path>
+              <path d="M14.9 5.5a6.5 6.5 0 0 1 0 9"></path>
             </svg>
-            <!-- Shown when widget is collapsed → click to expand (arrows point outward) -->
-            <svg class="icon-expand" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="8" x2="17" y2="3"/>
-              <polyline points="13,3 17,3 17,7"/>
-              <line x1="8" y1="12" x2="3" y2="17"/>
-              <polyline points="7,17 3,17 3,13"/>
+            <svg class="icon-sound-off" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="4,8 7.5,8 11,5 11,15 7.5,12 4,12"></polygon>
+              <line x1="14" y1="7" x2="17" y2="13"></line>
+              <line x1="17" y1="7" x2="14" y2="13"></line>
             </svg>
           </button>
           <button class="chat-action" id="btn-close" type="button" aria-label="Close">×</button>
@@ -110,6 +107,32 @@
   </button>
 
   <script>
+    // ── Analytics tracking ────────────────────────────────────────────────────
+    // Fire-and-forget — analytics failures must never affect the chat UX.
+    const _analyticsSession = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+    function track(event, data = {}) {
+      const payload = JSON.stringify({ event, sessionId: _analyticsSession, ...data });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(
+            "http://localhost:3030/api/assistant/analytics/track",
+            new Blob([payload], { type: "application/json" })
+          );
+        } else {
+          fetch("http://localhost:3030/api/assistant/analytics/track", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: payload, keepalive: true,
+          });
+        }
+      } catch {}
+    }
+
+    // Track chat opened once per page load
+    track("chat_opened");
+
     // ── Markdown helper ────────────────────────────────────────────────────────
     marked.use({ breaks: true, gfm: true });
 
@@ -125,7 +148,7 @@
     const inputRow     = document.getElementById("input-row");
     const chatInput    = document.getElementById("chat-input");
     const sendButton   = document.getElementById("send-button");
-    const btnExpand    = document.getElementById("btn-expand");
+    const btnSound     = document.getElementById("btn-sound");
     const btnClose     = document.getElementById("btn-close");
 
     // ── User context sent with every API request ───────────────────────────────
@@ -143,12 +166,79 @@
     // Tracks whether quick-reply chips have been moved to the compact strip
     let chipsCollapsed = false;
 
+    // Development-only trigger to preview the compact in-thread event recommendation.
+    const DEV_EVENT_TRIGGER = "/show-event-preview";
+    const DEV_EVENT_PREVIEW = [
+      {
+        title: "Meditation for Inner Stability",
+        date: "2026-04-07 12:00:00",
+        thumb: "https://media.mindcloud.club/84955/conversions/Copy-of-Copy-of-Copy-of-Desi-tess-2-thumb_440.jpg",
+        url: "https://us06web.zoom.us/meeting/register/Z7ZtlZDSTLGDZ6UiM0E0nw"
+      }
+    ];
+    const STORAGE_SOUND_MUTED = "nms_message_sound_muted";
+
     // ── Interest & seen-course tracking (persisted in localStorage) ───────────
     const STORAGE_INTERESTS = "nms_interests";
     const STORAGE_SEEN      = "nms_notified_ids";
+    const STORAGE_PROFILE   = "nms_profile";
     const STOP_WORDS        = new Set(["that","this","with","have","from","they","will",
       "what","when","more","also","about","your","just","like","very","some","been",
       "want","need","feel","help","make","know","think","time","good","better","really"]);
+
+    // ── User profile ──────────────────────────────────────────────────────────
+    function getUserProfile() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_PROFILE) ?? "{}"); }
+      catch { return {}; }
+    }
+
+    function saveProfileField(field, value) {
+      const profile = getUserProfile();
+      profile[field] = value;
+      localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+      track("user_context_captured", { field, value });
+      // Persist to server so profile survives across devices and sessions
+      fetch(`/api/profile/${userContext.userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field, value }),
+      }).catch(() => {});
+    }
+
+    // On init: fetch server profile and merge into localStorage
+    fetch(`/api/profile/${userContext.userId}`)
+      .then((r) => r.ok ? r.json() : {})
+      .then((serverProfile) => {
+        if (!serverProfile || !Object.keys(serverProfile).length) return;
+        const local  = getUserProfile();
+        const merged = { ...serverProfile, ...local };
+        localStorage.setItem(STORAGE_PROFILE, JSON.stringify(merged));
+      })
+      .catch(() => {});
+
+    const CHIP_PROFILE_MAP = {
+      "👨 Male":            { field: "gender",        value: "male" },
+      "👩 Female":          { field: "gender",        value: "female" },
+      "🌈 Non-binary":      { field: "gender",        value: "non-binary" },
+      "🤐 Prefer not to say":{ field: "gender",       value: "prefer_not" },
+      "🌱 Under 30":        { field: "ageGroup",      value: "under30" },
+      "💫 30–45":           { field: "ageGroup",      value: "30s" },
+      "🔥 45–60":           { field: "ageGroup",      value: "40s" },
+      "🌿 60+":             { field: "ageGroup",      value: "50plus" },
+      "💪 Generally healthy":  { field: "physicalState", value: "healthy" },
+      "🤕 Recovering from injury": { field: "physicalState", value: "recovering" },
+      "🦴 Chronic condition":  { field: "physicalState", value: "chronic" },
+      "🧘 Burnout / stress":   { field: "physicalState", value: "burnout" },
+      "💼 Desk worker":     { field: "workStyle",     value: "seated" },
+      "🚶 On feet all day": { field: "workStyle",     value: "physical" },
+      "🏠 Retired / home":  { field: "workStyle",     value: "retired" },
+      "🏋️ Already active":  { field: "workStyle",     value: "active" },
+      "💪 Physical pain":   { field: "concernType",   value: "physical_pain" },
+      "💙 Emotional / stress":{ field: "concernType", value: "emotional" },
+      "⚡ Low energy":       { field: "concernType",   value: "energy" },
+      "🧠 Mental clarity":  { field: "concernType",   value: "cognitive" },
+      "🎵 Voice & expression":{ field: "concernType", value: "voice" },
+    };
 
     function getInterests() {
       try { return JSON.parse(localStorage.getItem(STORAGE_INTERESTS) ?? "[]"); }
@@ -176,100 +266,15 @@
       localStorage.setItem(STORAGE_SEEN, JSON.stringify([...seen]));
     }
 
-    // ── Proactive notifications ────────────────────────────────────────────────
-    async function loadNotifications() {
-      const interests = getInterests();
-      const seenIds   = getSeenIds();
-      const params    = new URLSearchParams({
-        interests: interests.join(","),
-        seen:      seenIds.join(","),
-      });
-      try {
-        const res  = await fetch(`http://localhost:3030/api/assistant/notifications?${params}`);
-        const data = await res.json();
-        return data.notifications ?? [];
-      } catch { return []; }
+    function isMessageSoundMuted() {
+      return localStorage.getItem(STORAGE_SOUND_MUTED) === "1";
     }
 
-    function renderNotification(n) {
-      if (n.type === "event" && !n.event) return; // placeholder — skip until events API live
-
-      const wrap = document.createElement("div");
-      wrap.className = "notification-bubble";
-
-      if (n.type === "new_course") {
-        const c = n.course;
-        wrap.innerHTML = `
-          <div class="notif-header">
-            <span class="notif-icon">✨</span>
-            <span class="notif-label">Just released for you</span>
-          </div>
-          <div class="notif-text">We just added a new course that matches your interests — and it's already trending!</div>
-          <a class="notif-card" href="${c.url}" target="_blank" rel="noopener">
-            ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
-            <div class="notif-card-body">
-              <span class="notif-card-title">${c.title}</span>
-              ${c.author ? `<span class="notif-card-sub">${c.author}</span>` : ""}
-              <span class="notif-card-proof">🔥 ${n.watching} people joining this course</span>
-            </div>
-          </a>
-        `;
-        if (c.id) markAsSeen(c.id);
-      }
-
-      if (n.type === "popular_course") {
-        const c = n.course;
-        wrap.innerHTML = `
-          <div class="notif-header">
-            <span class="notif-icon">⭐</span>
-            <span class="notif-label">Popular in your area of interest</span>
-          </div>
-          <div class="notif-text">Based on your interests, this highly-rated course might be exactly what you need.</div>
-          <a class="notif-card" href="${c.url}" target="_blank" rel="noopener">
-            ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
-            <div class="notif-card-body">
-              <span class="notif-card-title">${c.title}</span>
-              ${c.author ? `<span class="notif-card-sub">${c.author}</span>` : ""}
-              ${c.rating ? `<span class="notif-card-rating">★ ${c.rating}</span>` : ""}
-            </div>
-          </a>
-        `;
-        if (c.id) markAsSeen(c.id);
-      }
-
-      if (n.type === "event" && n.event) {
-        const e = n.event;
-        wrap.innerHTML = `
-          <div class="notif-header">
-            <span class="notif-icon">🗓</span>
-            <span class="notif-label">Upcoming community event</span>
-          </div>
-          <div class="notif-text">There's a live event coming up that might be interesting for you.</div>
-          <a class="notif-card" href="${e.url}" target="_blank" rel="noopener">
-            ${e.thumb ? `<img src="${e.thumb}" alt="" loading="lazy" />` : ""}
-            <div class="notif-card-body">
-              <span class="notif-card-title">${e.title}</span>
-              ${e.host ? `<span class="notif-card-sub">${e.host}</span>` : ""}
-              ${e.date ? `<span class="notif-card-rating">${new Date(e.date).toLocaleDateString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>` : ""}
-            </div>
-          </a>
-        `;
-      }
-
-      if (wrap.innerHTML) chatMessages.appendChild(wrap);
-    }
-
-    // Show notifications 6 seconds after chat opens — only on first open per session
-    const NOTIF_SHOWN_KEY = "nms_notif_shown";
-    if (!sessionStorage.getItem(NOTIF_SHOWN_KEY)) {
-      setTimeout(async () => {
-        const notifs = await loadNotifications();
-        notifs.forEach(renderNotification);
-        if (notifs.some(n => n.type !== "event" || n.event)) {
-          sessionStorage.setItem(NOTIF_SHOWN_KEY, "1");
-          scrollToBottom?.();
-        }
-      }, 6000);
+    function syncSoundButton() {
+      const muted = isMessageSoundMuted();
+      btnSound.classList.toggle("is-muted", muted);
+      btnSound.setAttribute("aria-pressed", String(muted));
+      btnSound.setAttribute("aria-label", muted ? "Turn chat sounds on" : "Turn chat sounds off");
     }
 
     function collapseChips() {
@@ -363,6 +368,16 @@ What would you like to work on today?
       document.querySelector(".chat-body").scrollTop = 9999;
     }
 
+    function scrollToGroupTop(group) {
+      const chatBody = document.querySelector(".chat-body");
+      const label    = group.querySelector(".agent-label") ?? group;
+      requestAnimationFrame(() => {
+        const bodyRect  = chatBody.getBoundingClientRect();
+        const labelRect = label.getBoundingClientRect();
+        chatBody.scrollBy({ top: labelRect.top - bodyRect.top - 8, behavior: "smooth" });
+      });
+    }
+
     function addUserMessage(text) {
       const now   = new Date();
       maybeInsertDateSeparator(now);
@@ -400,7 +415,74 @@ What would you like to work on today?
       return group;
     }
 
-    function addAssistantMessage(text, courses = [], events = []) {
+    function playAssistantMessageSound() {
+      if (isMessageSoundMuted()) return;
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) return;
+      try {
+        const audio = new AudioContextCtor();
+        const now = audio.currentTime;
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.018, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.33);
+        gain.connect(audio.destination);
+
+        const oscA = audio.createOscillator();
+        oscA.type = "sine";
+        oscA.frequency.setValueAtTime(659.25, now);
+        oscA.connect(gain);
+        oscA.start(now);
+        oscA.stop(now + 0.12);
+
+        const oscB = audio.createOscillator();
+        oscB.type = "sine";
+        oscB.frequency.setValueAtTime(783.99, now + 0.09);
+        oscB.connect(gain);
+        oscB.start(now + 0.09);
+        oscB.stop(now + 0.25);
+
+        oscB.onended = () => audio.close().catch(() => {});
+      } catch {}
+    }
+
+    function playEventPreviewSound() {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) return;
+      try {
+        const audio = new AudioContextCtor();
+        const now = audio.currentTime;
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.04, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+        gain.connect(audio.destination);
+
+        const oscA = audio.createOscillator();
+        oscA.type = "sine";
+        oscA.frequency.setValueAtTime(880, now);
+        oscA.connect(gain);
+        oscA.start(now);
+        oscA.stop(now + 0.16);
+
+        const oscB = audio.createOscillator();
+        oscB.type = "sine";
+        oscB.frequency.setValueAtTime(1174.66, now + 0.14);
+        oscB.connect(gain);
+        oscB.start(now + 0.14);
+        oscB.stop(now + 0.42);
+
+        oscB.onended = () => audio.close().catch(() => {});
+      } catch {}
+    }
+
+    function buildLessonMap(lessons) {
+      const map = {};
+      for (const l of lessons) { if (!map[l.courseName]) map[l.courseName] = l; }
+      return map;
+    }
+
+    function addAssistantMessage(text, courses = [], events = [], chips = null, lessons = []) {
       const now   = new Date();
       maybeInsertDateSeparator(now);
       const group = document.createElement("div");
@@ -415,15 +497,21 @@ What would you like to work on today?
         </div>
         <div class="message-meta"></div>
       `;
-      group.querySelector(".companion-bubble").innerHTML = renderMarkdown(text);
-      const meta = group.querySelector(".message-meta");
+      const bubble = group.querySelector(".companion-bubble");
+      bubble.innerHTML = renderMarkdown(text);
 
-      // ── Course cards (scrollable row inside the bubble frame) ──
+      // ── Course cards — inside the bubble, visually part of the reply ──
       if (courses.length) {
+        const lessonMap = buildLessonMap(lessons);
         const cards = document.createElement("div");
         cards.className = "course-cards";
-        cards.innerHTML = courses.map(c => `
-          <a class="course-card" href="${c.url}" target="_blank" rel="noopener">
+        courses.forEach(c => {
+          const card = document.createElement("a");
+          card.className = "course-card";
+          card.href = c.url;
+          card.target = "_blank";
+          card.rel = "noopener";
+          card.innerHTML = `
             <div class="course-card-thumb">
               ${c.thumb ? `<img src="${c.thumb}" alt="" loading="lazy" />` : ""}
             </div>
@@ -431,37 +519,65 @@ What would you like to work on today?
               <span class="course-card-title">${c.title}</span>
               ${c.author ? `<span class="course-card-author">${c.author}</span>` : ""}
               ${c.rating ? `<span class="course-card-rating">★ ${c.rating}</span>` : ""}
-            </div>
-          </a>
-        `).join("");
-        meta.before(cards);
+            </div>`;
+          const match = lessonMap[c.title];
+          if (match) {
+            const pill = document.createElement("div");
+            pill.className = "course-card-lesson";
+            pill.innerHTML = `<span class="course-card-lesson-icon">▶</span><span class="course-card-lesson-text">Start with: ${match.lessonName}</span>`;
+            card.appendChild(pill);
+          }
+          cards.appendChild(card);
+        });
+        bubble.appendChild(cards);
       }
 
-      // ── Event cards (separate row below courses) ──
+      // ── Event cards — inside the bubble, below course cards ──
       if (events.length) {
         const evtSection = document.createElement("div");
         evtSection.className = "event-section";
         evtSection.innerHTML = `
-          <div class="event-section-label">🗓 Upcoming community events</div>
+          <div class="event-inline-intro">Our community is gathering soon. We'd be glad to see you there.</div>
           <div class="event-cards">
             ${events.map(e => `
               <a class="event-card" href="${e.url}" target="_blank" rel="noopener">
                 ${e.thumb ? `<img class="event-card-thumb" src="${e.thumb}" alt="" loading="lazy" />` : ""}
                 <div class="event-card-body">
                   <span class="event-card-title">${e.title}</span>
-                  ${e.host ? `<span class="event-card-host">${e.host}</span>` : ""}
                   ${e.date ? `<span class="event-card-date">${new Date(e.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>` : ""}
                 </div>
               </a>
             `).join("")}
           </div>
         `;
-        meta.before(evtSection);
+        bubble.appendChild(evtSection);
+        playEventPreviewSound();
+      } else {
+        playAssistantMessageSound();
+      }
+
+      // ── Clarifying chips (inline answer options below the bubble) ─────────
+      if (chips && chips.length) {
+        const chipRow = document.createElement("div");
+        chipRow.className = "response-chips";
+        chips.forEach(({ label }) => {
+          const btn = document.createElement("button");
+          btn.className = "response-chip";
+          btn.textContent = label;
+          btn.addEventListener("click", () => {
+            const mapping = CHIP_PROFILE_MAP[label];
+            if (mapping) saveProfileField(mapping.field, mapping.value);
+            chipRow.remove();
+            sendMessage(label);
+          }, { once: true });
+          chipRow.appendChild(btn);
+        });
+        group.appendChild(chipRow);
       }
 
       stampGroup(group, now);
       chatMessages.appendChild(group);
-      scrollToBottom();
+      scrollToGroupTop(group);
     }
 
     // ── Send a message ─────────────────────────────────────────────────────────
@@ -471,11 +587,22 @@ What would you like to work on today?
 
       collapseChips();
       addInterests(text);
+      track("message_sent", { messageIndex: conversation.filter(m => m.role === "user").length, interests: getInterests() });
       addUserMessage(text);
       conversation.push({ role: "user", content: text });
 
       chatInput.value = "";
       inputRow.classList.remove("has-text");
+
+      if (text === DEV_EVENT_TRIGGER) {
+        conversation.push({ role: "assistant", content: "You won't want to miss this live session." });
+        addAssistantMessage(
+          "You won't want to miss this live session.",
+          [],
+          DEV_EVENT_PREVIEW
+        );
+        return;
+      }
 
       const typingGroup = addTypingIndicator();
 
@@ -483,7 +610,7 @@ What would you like to work on today?
         const response = await fetch("http://localhost:3030/api/assistant/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...userContext, message: text, conversation }),
+          body: JSON.stringify({ ...userContext, message: text, conversation, userProfile: getUserProfile() }),
         });
 
         const data = await response.json();
@@ -494,8 +621,11 @@ What would you like to work on today?
         const reply   = data.reply?.message ?? "No response returned.";
         const courses = data.courses ?? [];
         const events  = data.events  ?? [];
+        const chips   = data.chips   ?? null;
+        const lessons = data.lessons ?? [];
+        if (courses.length) track("courses_recommended", { courseTitles: courses.map(c => c.title), count: courses.length });
         conversation.push({ role: "assistant", content: reply });
-        addAssistantMessage(reply, courses, events);
+        addAssistantMessage(reply, courses, events, chips, lessons);
 
       } catch (err) {
         typingGroup.remove();
@@ -512,6 +642,27 @@ What would you like to work on today?
 
     sendButton.addEventListener("click", () => sendMessage());
     chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+    btnSound.addEventListener("click", () => {
+      const nextMuted = !isMessageSoundMuted();
+      localStorage.setItem(STORAGE_SOUND_MUTED, nextMuted ? "1" : "0");
+      syncSoundButton();
+    });
+    syncSoundButton();
+
+    // ── Course-click tracking (delegation — no changes to card HTML needed) ─────
+    chatMessages.addEventListener("click", (e) => {
+      const card = e.target.closest(".course-card");
+      if (card) {
+        const title = card.querySelector(".course-card-title")?.textContent?.trim();
+        if (title) track("course_clicked", { courseTitle: title });
+      }
+
+      const eventCard = e.target.closest(".event-card");
+      if (eventCard) {
+        const eventTitle = eventCard.querySelector(".event-card-title")?.textContent?.trim();
+        if (eventTitle) track("event_clicked", { eventTitle });
+      }
+    });
 
     // ── Quick-reply chips ──────────────────────────────────────────────────────
     quickReplies.addEventListener("click", (e) => {
@@ -523,25 +674,87 @@ What would you like to work on today?
       sendMessage(chip.textContent.trim());
     });
 
-    // ── Collapse / expand ──────────────────────────────────────────────────────
-    btnExpand.addEventListener("click", () => {
-      const collapsed = chatWidget.classList.toggle("collapsed");
-      btnExpand.classList.toggle("is-collapsed", collapsed);
-      btnExpand.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
-    });
-
     // ── Close → mini bubble / Re-open ─────────────────────────────────────────
     btnClose.addEventListener("click", () => {
       chatWidget.classList.add("hidden");
       chatBubble.classList.add("visible");
     });
 
-    chatBubble.addEventListener("click", () => {
-      chatWidget.classList.remove("hidden", "collapsed");
-      chatBubble.classList.remove("visible");
-      btnExpand.classList.remove("is-collapsed");
-      btnExpand.setAttribute("aria-label", "Collapse");
-    });
+    // ── Draggable bubble (vertical, snapped to right edge) ────────────────────
+    (function () {
+      const BUBBLE_TOP_KEY = "nms_bubble_top";
+      const H = 76; // bubble height — keep in sync with CSS
+
+      function defaultTop() { return window.innerHeight - H - 72; }
+
+      function clampTop(val) {
+        return Math.max(0, Math.min(window.innerHeight - H, val));
+      }
+
+      function setTop(val) {
+        chatBubble.style.top = clampTop(val) + "px";
+      }
+
+      // Restore saved position or fall back to default
+      const saved = localStorage.getItem(BUBBLE_TOP_KEY);
+      setTop(saved !== null ? Number(saved) : defaultTop());
+
+      // Re-clamp on window resize so it doesn't go off-screen
+      window.addEventListener("resize", () => {
+        setTop(parseInt(chatBubble.style.top, 10));
+      });
+
+      let startClientY = 0;
+      let startTop     = 0;
+      let moved        = false;
+
+      function dragStart(clientY) {
+        startClientY = clientY;
+        startTop     = parseInt(chatBubble.style.top, 10);
+        moved        = false;
+        chatBubble.classList.add("dragging");
+      }
+
+      function dragMove(clientY) {
+        const dy = clientY - startClientY;
+        if (!moved && Math.abs(dy) > 4) moved = true;
+        if (moved) setTop(startTop + dy);
+      }
+
+      function dragEnd() {
+        chatBubble.classList.remove("dragging");
+        if (moved) localStorage.setItem(BUBBLE_TOP_KEY, parseInt(chatBubble.style.top, 10));
+      }
+
+      // Mouse
+      chatBubble.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        dragStart(e.clientY);
+        function onMove(e) { dragMove(e.clientY); }
+        function onUp()    { dragEnd(); document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      });
+
+      // Touch
+      chatBubble.addEventListener("touchstart", (e) => {
+        dragStart(e.touches[0].clientY);
+      }, { passive: true });
+
+      chatBubble.addEventListener("touchmove", (e) => {
+        if (moved) e.preventDefault();
+        dragMove(e.touches[0].clientY);
+      }, { passive: false });
+
+      chatBubble.addEventListener("touchend", () => { dragEnd(); });
+
+      // Open chat only on tap (not after a drag)
+      chatBubble.addEventListener("click", () => {
+        if (moved) return;
+        chatWidget.classList.remove("hidden", "collapsed");
+        chatBubble.classList.remove("visible");
+      });
+    }());
   </script>
 
 </body>

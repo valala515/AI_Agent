@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NMS Chat Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange:  #ff4f00;
+      --ink:     #222323;
+      --gray:    #616263;
+      --line:    #e0e1e2;
+      --cream:   #fbf7ef;
+      --surface: #ffffff;
+      --bg:      #f4f3f0;
+      --green:   #1daf6e;
+      --blue:    #2458ef;
+      --font:    "Avenir Next", "Segoe UI", Arial, sans-serif;
+      --radius:  14px;
+    }
+
+    body { background: var(--bg); font-family: var(--font); color: var(--ink); min-height: 100vh; }
+
+    /* ── Access denied ── */
+    #access-denied {
+      display: none; align-items: center; justify-content: center;
+      min-height: 100vh; flex-direction: column; gap: 12px;
+    }
+    #access-denied h1 { font-size: 22px; color: var(--ink); }
+    #access-denied p  { color: var(--gray); font-size: 14px; }
+
+    /* ── Layout ── */
+    #dashboard { display: none; }
+
+    .an-header {
+      background: var(--ink);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .an-header-left { display: flex; align-items: center; gap: 14px; }
+    .an-header-logo { width: 28px; height: 28px; opacity: 0.9; }
+    .an-header h1   { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.01em; }
+    .an-header-meta { font-size: 12px; color: rgba(255,255,255,0.45); }
+    .an-header-badge {
+      font-size: 11px; font-weight: 600; background: rgba(255,79,0,0.18);
+      color: var(--orange); padding: 4px 10px; border-radius: 99px;
+    }
+
+    .an-main { max-width: 1280px; margin: 0 auto; padding: 28px 24px 60px; }
+
+    /* ── Stat cards ── */
+    .an-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) { .an-stats { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 540px) { .an-stats { grid-template-columns: 1fr; } }
+
+    .an-stat {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      border: 1px solid var(--line);
+    }
+    .an-stat-label  { font-size: 11px; font-weight: 600; color: var(--gray); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .an-stat-value  { font-size: 36px; font-weight: 800; color: var(--ink); line-height: 1; }
+    .an-stat-value.accent { color: var(--orange); }
+    .an-stat-value.green  { color: var(--green);  }
+    .an-stat-sub    { font-size: 12px; color: var(--gray); margin-top: 6px; }
+
+    /* ── Section cards ── */
+    .an-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .an-grid-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    @media (max-width: 900px) { .an-grid-2, .an-grid-3 { grid-template-columns: 1fr; } }
+
+    .an-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      padding: 22px 24px;
+    }
+    .an-card-full { grid-column: 1 / -1; }
+    .an-card h2   { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+    .an-card-desc { font-size: 11px; color: var(--gray); margin-bottom: 18px; }
+
+    /* ── Chart container ── */
+    .an-chart-wrap { position: relative; height: 200px; }
+
+    /* ── CSS bar charts ── */
+    .an-bars { display: flex; flex-direction: column; gap: 9px; }
+    .an-bar-row { display: flex; align-items: center; gap: 10px; }
+    .an-bar-label {
+      font-size: 11px; color: var(--ink); width: 200px; flex-shrink: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .an-bar-track { flex: 1; background: var(--bg); border-radius: 99px; height: 8px; overflow: hidden; }
+    .an-bar-fill  { height: 100%; border-radius: 99px; background: var(--orange); transition: width 0.6s ease; }
+    .an-bar-fill.blue  { background: var(--blue); }
+    .an-bar-fill.green { background: var(--green); }
+    .an-bar-count { font-size: 11px; font-weight: 700; color: var(--gray); width: 28px; text-align: right; flex-shrink: 0; }
+
+    /* ── Comparison table ── */
+    .an-compare { display: flex; flex-direction: column; gap: 8px; }
+    .an-compare-row { display: flex; flex-direction: column; gap: 4px; }
+    .an-compare-title { font-size: 11px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .an-compare-bars  { display: flex; gap: 4px; align-items: center; }
+    .an-compare-bar   { height: 6px; border-radius: 99px; min-width: 2px; transition: width 0.5s ease; }
+    .an-compare-bar.rec   { background: var(--line); border: 1px solid #ccc; }
+    .an-compare-bar.click { background: var(--orange); }
+    .an-compare-legend { display: flex; gap: 14px; margin-bottom: 14px; }
+    .an-compare-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+    /* ── Notification grid ── */
+    .an-notif-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .an-notif-cell { background: var(--bg); border-radius: 10px; padding: 12px 14px; }
+    .an-notif-type  { font-size: 10px; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .an-notif-nums  { display: flex; gap: 12px; }
+    .an-notif-num   { display: flex; flex-direction: column; }
+    .an-notif-n     { font-size: 22px; font-weight: 800; color: var(--ink); line-height: 1; }
+    .an-notif-sub   { font-size: 10px; color: var(--gray); margin-top: 2px; }
+    .an-notif-ctr   { font-size: 11px; font-weight: 600; color: var(--green); margin-top: 8px; }
+
+    /* ── Empty state ── */
+    .an-empty { text-align: center; padding: 32px 0; color: var(--gray); font-size: 13px; }
+
+    /* ── Loading ── */
+    #loading {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: var(--gray);
+    }
+
+    /* ── Section label ── */
+    .an-section-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--gray);
+      margin: 28px 0 12px;
+    }
+
+    /* ── User activity table ── */
+    .ua-toolbar {
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .ua-search {
+      flex: 1; min-width: 200px;
+      padding: 8px 12px; border: 1px solid var(--line);
+      border-radius: 8px; font-size: 13px; font-family: var(--font);
+      color: var(--ink); background: var(--surface); outline: none;
+    }
+    .ua-search:focus { border-color: var(--orange); }
+    .ua-filter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ua-filter-btn {
+      padding: 6px 12px; border: 1px solid var(--line);
+      border-radius: 99px; font-size: 11px; font-weight: 600;
+      font-family: var(--font); background: var(--surface);
+      color: var(--gray); cursor: pointer; transition: all 0.15s;
+    }
+    .ua-filter-btn:hover  { border-color: var(--orange); color: var(--orange); }
+    .ua-filter-btn.active { background: var(--orange); border-color: var(--orange); color: #fff; }
+    .ua-sort-select {
+      padding: 6px 10px; border: 1px solid var(--line);
+      border-radius: 8px; font-size: 12px; font-family: var(--font);
+      color: var(--ink); background: var(--surface); cursor: pointer; outline: none;
+    }
+    .ua-count { font-size: 12px; color: var(--gray); margin-left: auto; white-space: nowrap; }
+
+    .ua-table { width: 100%; border-collapse: collapse; }
+    .ua-table th {
+      text-align: left; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--gray); padding: 0 10px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .ua-table th.sortable { cursor: pointer; user-select: none; }
+    .ua-table th.sortable:hover { color: var(--orange); }
+    .ua-table th.sort-active { color: var(--orange); }
+    .ua-sort-arrow { margin-left: 3px; opacity: 0.6; }
+
+    .ua-row { border-bottom: 1px solid var(--line); cursor: pointer; transition: background 0.1s; }
+    .ua-row:hover { background: var(--cream); }
+    .ua-row.expanded { background: var(--cream); }
+    .ua-row td { padding: 11px 10px; vertical-align: top; }
+
+    .ua-uid { font-size: 12px; font-weight: 700; color: var(--ink); font-family: monospace; }
+    .ua-num { font-size: 13px; font-weight: 700; color: var(--ink); }
+    .ua-num.accent { color: var(--orange); }
+    .ua-num.zero   { color: var(--gray); font-weight: 400; }
+    .ua-topics { display: flex; gap: 4px; flex-wrap: wrap; max-width: 240px; }
+    .ua-topic-tag {
+      font-size: 10px; font-weight: 600; padding: 2px 7px;
+      border-radius: 99px; background: rgba(36,88,239,0.08);
+      color: var(--blue); white-space: nowrap;
+    }
+    .ua-time { font-size: 11px; color: var(--gray); white-space: nowrap; }
+    .ua-expand-icon { font-size: 12px; color: var(--gray); transition: transform 0.2s; display: inline-block; }
+    .ua-row.expanded .ua-expand-icon { transform: rotate(90deg); }
+
+    .ua-detail-row { display: none; background: var(--cream); }
+    .ua-detail-row.open { display: table-row; }
+    .ua-detail-cell { padding: 0 10px 14px 32px !important; }
+    .ua-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding-top: 10px; }
+    @media (max-width: 640px) { .ua-detail-grid { grid-template-columns: 1fr; } }
+    .ua-detail-block h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray); margin-bottom: 6px; }
+    .ua-detail-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+    .ua-detail-list li { font-size: 11px; color: var(--ink); }
+    .ua-detail-list li::before { content: "·  "; color: var(--gray); }
+    .ua-detail-empty { font-size: 11px; color: var(--gray); font-style: italic; }
+
+    .ua-segment-badge {
+      display: inline-block; font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .ua-segment-badge.engaged  { background: rgba(29,175,110,0.12); color: var(--green); }
+    .ua-segment-badge.curious  { background: rgba(255,79,0,0.10);   color: var(--orange); }
+    .ua-segment-badge.browsing { background: rgba(97,98,99,0.10);   color: var(--gray); }
+  </style>
+</head>
+<body>
+
+<div id="loading">Loading analytics…</div>
+
+<div id="access-denied">
+  <h1>Access denied</h1>
+  <p>Open this page with <code>?token=YOUR_TOKEN</code> in the URL.</p>
+</div>
+
+<div id="dashboard">
+
+  <header class="an-header">
+    <div class="an-header-left">
+      <img class="an-header-logo" src="assets/newmindstart-mark.svg" alt="" />
+      <h1>NMS Chat Analytics</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span class="an-header-meta">Updated <span id="generated-at">—</span></span>
+      <span class="an-header-badge">Internal use only</span>
+    </div>
+  </header>
+
+  <main class="an-main">
+
+    <!-- ── Key stats ── -->
+    <div class="an-stats" id="stat-cards">
+      <div class="an-stat">
+        <div class="an-stat-label">Chat sessions</div>
+        <div class="an-stat-value" id="s-sessions">—</div>
+        <div class="an-stat-sub">unique visitors who opened chat</div>
+      </div>
+      <div class="an-stat">
+        <div class="an-stat-label">Messages sent</div>
+        <div class="an-stat-value" id="s-messages">—</div>
+        <div class="an-stat-sub" id="s-avg-msg">avg — per session</div>
+      </div>
+      <div class="an-stat">
+        <div class="an-stat-label">Course clicks</div>
+        <div class="an-stat-value accent" id="s-clicks">—</div>
+        <div class="an-stat-sub" id="s-sessions-clicked">— sessions clicked at least one</div>
+      </div>
+      <div class="an-stat">
+        <div class="an-stat-label">Discovery rate</div>
+        <div class="an-stat-value green" id="s-discovery">—%</div>
+        <div class="an-stat-sub" id="s-depth">avg — msgs before first click</div>
+      </div>
+    </div>
+
+    <!-- ── Sessions over time ── -->
+    <p class="an-section-label">Chat activity — last 30 days</p>
+    <div class="an-grid-2" style="grid-template-columns: 2fr 1fr;">
+      <div class="an-card">
+        <h2>Daily chat sessions</h2>
+        <p class="an-card-desc">Number of times the chat widget was opened each day</p>
+        <div class="an-chart-wrap">
+          <canvas id="sessions-chart"></canvas>
+        </div>
+      </div>
+      <div class="an-card">
+        <h2>Notification engagement</h2>
+        <p class="an-card-desc">Proactive bubbles shown vs clicked</p>
+        <div class="an-notif-grid" id="notif-grid">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Course discovery ── -->
+    <p class="an-section-label">Course discovery via chat</p>
+    <div class="an-grid-2">
+      <div class="an-card">
+        <h2>Most clicked courses</h2>
+        <p class="an-card-desc">Courses users tapped through to from the AI reply cards</p>
+        <div class="an-bars" id="bars-clicked"></div>
+      </div>
+      <div class="an-card">
+        <h2>Recommended vs clicked</h2>
+        <p class="an-card-desc">
+          <span style="display:inline-flex;align-items:center;gap:4px">
+            <span class="an-compare-dot" style="background:var(--line);border:1px solid #ccc"></span> Recommended
+          </span>
+          &nbsp;
+          <span style="display:inline-flex;align-items:center;gap:4px">
+            <span class="an-compare-dot" style="background:var(--orange)"></span> Clicked
+          </span>
+        </p>
+        <div class="an-compare" id="course-compare"></div>
+      </div>
+    </div>
+
+    <!-- ── Topics ── -->
+    <p class="an-section-label">What users are asking about</p>
+    <div class="an-card an-card-full" style="margin-bottom:14px">
+      <h2>Top user topics</h2>
+      <p class="an-card-desc">Keywords extracted from user messages — shows what content interests your audience most</p>
+      <div class="an-bars" id="bars-topics"></div>
+    </div>
+
+    <!-- ── User activity ── -->
+    <p class="an-section-label">User activity</p>
+    <div class="an-card an-card-full" style="margin-bottom:14px">
+      <h2>Per-user engagement</h2>
+      <p class="an-card-desc">Every user ID seen in the chat — sessions, messages, course interactions, topics and last activity</p>
+
+      <div class="ua-toolbar" id="ua-toolbar">
+        <input class="ua-search" id="ua-search" type="search" placeholder="Filter by user ID or topic…" />
+        <div class="ua-filter-group">
+          <button class="ua-filter-btn active" data-seg="all">All</button>
+          <button class="ua-filter-btn" data-seg="engaged">Engaged (clicked)</button>
+          <button class="ua-filter-btn" data-seg="curious">Curious (messages, no click)</button>
+          <button class="ua-filter-btn" data-seg="browsing">Browsing (no messages)</button>
+        </div>
+        <select class="ua-sort-select" id="ua-sort">
+          <option value="lastSeen">Sort: Last seen</option>
+          <option value="messages">Sort: Most messages</option>
+          <option value="sessions">Sort: Most sessions</option>
+          <option value="courseClicks">Sort: Most clicks</option>
+        </select>
+        <span class="ua-count" id="ua-count"></span>
+      </div>
+
+      <div style="overflow-x:auto">
+        <table class="ua-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>User ID</th>
+              <th>Segment</th>
+              <th class="sortable" data-col="sessions">Sessions <span class="ua-sort-arrow">↕</span></th>
+              <th class="sortable" data-col="messages">Messages <span class="ua-sort-arrow">↕</span></th>
+              <th class="sortable" data-col="courseClicks">Course clicks <span class="ua-sort-arrow">↕</span></th>
+              <th>Top topics</th>
+              <th class="sortable" data-col="lastSeen">Last seen <span class="ua-sort-arrow">↕</span></th>
+            </tr>
+          </thead>
+          <tbody id="ua-body"></tbody>
+        </table>
+      </div>
+      <p class="an-empty" id="ua-empty" style="display:none">No users match this filter.</p>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const API_BASE = "http://localhost:3030";
+  const TOKEN    = new URLSearchParams(location.search).get("token");
+
+  const loading  = document.getElementById("loading");
+  const denied   = document.getElementById("access-denied");
+  const dash     = document.getElementById("dashboard");
+
+  if (!TOKEN) {
+    loading.style.display = "none";
+    denied.style.display  = "flex";
+  } else {
+    init();
+  }
+
+  async function init() {
+    try {
+      const res = await fetch(`${API_BASE}/api/assistant/analytics/data?token=${encodeURIComponent(TOKEN)}`);
+      if (res.status === 403) throw new Error("forbidden");
+      if (!res.ok)            throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      render(data);
+      loading.style.display = "none";
+      dash.style.display    = "block";
+    } catch (err) {
+      loading.textContent = err.message === "forbidden"
+        ? "Access denied — check your token."
+        : `Could not load data: ${err.message}. Make sure the server is running on ${API_BASE}.`;
+    }
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
+  function render(d) {
+    renderStats(d.stats);
+    renderSessionChart(d.dailySessions);
+    renderNotifications(d.notifications);
+    renderBars("bars-clicked", d.topClickedCourses, "var(--orange)");
+    renderCompare(d.courseComparison);
+    renderBars("bars-topics", d.topTopics, "var(--blue)");
+    renderUserActivity(d.userActivity ?? []);
+    document.getElementById("generated-at").textContent =
+      new Date(d.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function renderStats(s) {
+    document.getElementById("s-sessions").textContent     = fmt(s.totalSessions);
+    document.getElementById("s-messages").textContent     = fmt(s.totalMessages);
+    document.getElementById("s-clicks").textContent       = fmt(s.totalCourseClicks);
+    document.getElementById("s-discovery").textContent    = s.discoveryRate + "%";
+    document.getElementById("s-avg-msg").textContent      = `avg ${s.avgMessages} per session`;
+    document.getElementById("s-sessions-clicked").textContent =
+      `${fmt(s.sessionsWithClicks)} sessions clicked at least one`;
+    document.getElementById("s-depth").textContent        =
+      s.avgDepthToClick === "—"
+        ? "no clicks recorded yet"
+        : `avg ${s.avgDepthToClick} msgs before first click`;
+  }
+
+  function renderSessionChart(days) {
+    const labels = days.map((d) => {
+      const dt = new Date(d.date + "T00:00:00");
+      return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    });
+    const counts = days.map((d) => d.count);
+
+    new Chart(document.getElementById("sessions-chart"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Sessions",
+          data:  counts,
+          fill:  true,
+          tension: 0.35,
+          borderColor: "#ff4f00",
+          backgroundColor: "rgba(255,79,0,0.08)",
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 10 }, color: "#616263" } },
+          y: { beginAtZero: true, grid: { color: "#e0e1e2" }, ticks: { precision: 0, font: { size: 10 }, color: "#616263" } },
+        },
+      },
+    });
+  }
+
+  function renderNotifications(notif) {
+    const types = [
+      { key: "new_course",     label: "New release",  icon: "✨" },
+      { key: "popular_course", label: "Popular pick", icon: "⭐" },
+      { key: "event",          label: "Event",        icon: "🗓" },
+    ];
+    const grid = document.getElementById("notif-grid");
+    grid.innerHTML = types.map(({ key, label, icon }) => {
+      const shown   = notif.shown[key]   || 0;
+      const clicked = notif.clicked[key] || 0;
+      const ctr     = shown > 0 ? Math.round((clicked / shown) * 100) : 0;
+      return `
+        <div class="an-notif-cell">
+          <div class="an-notif-type">${icon} ${label}</div>
+          <div class="an-notif-nums">
+            <div class="an-notif-num"><span class="an-notif-n">${shown}</span><span class="an-notif-sub">shown</span></div>
+            <div class="an-notif-num"><span class="an-notif-n" style="color:var(--orange)">${clicked}</span><span class="an-notif-sub">clicked</span></div>
+          </div>
+          ${shown > 0 ? `<div class="an-notif-ctr">${ctr}% CTR</div>` : ""}
+        </div>`;
+    }).join("");
+  }
+
+  function renderBars(elId, pairs, color) {
+    const el = document.getElementById(elId);
+    if (!pairs.length) { el.innerHTML = `<p class="an-empty">No data yet</p>`; return; }
+    const max = Math.max(...pairs.map((p) => p[1]), 1);
+    el.innerHTML = pairs.map(([label, count]) => `
+      <div class="an-bar-row">
+        <span class="an-bar-label" title="${esc(label)}">${esc(label)}</span>
+        <div class="an-bar-track">
+          <div class="an-bar-fill" style="width:${Math.round((count / max) * 100)}%;background:${color}"></div>
+        </div>
+        <span class="an-bar-count">${count}</span>
+      </div>`).join("");
+  }
+
+  function renderCompare(courses) {
+    const el = document.getElementById("course-compare");
+    if (!courses.length) { el.innerHTML = `<p class="an-empty">No data yet</p>`; return; }
+    const maxRec   = Math.max(...courses.map((c) => c.recommended), 1);
+    const maxClick = Math.max(...courses.map((c) => c.clicks), 1);
+    const scale    = 160; // max bar width px
+    el.innerHTML = courses.map((c) => `
+      <div class="an-compare-row">
+        <div class="an-compare-title" title="${esc(c.title)}">${esc(c.title)}</div>
+        <div class="an-compare-bars">
+          <div class="an-compare-bar rec"   style="width:${Math.round((c.recommended / maxRec) * scale)}px"></div>
+          <div class="an-compare-bar click" style="width:${Math.round((c.clicks / maxClick) * scale)}px"></div>
+          <span style="font-size:10px;color:var(--gray);margin-left:6px">${c.clicks} / ${c.recommended}</span>
+        </div>
+      </div>`).join("");
+  }
+
+  // ─── User activity table ───────────────────────────────────────────────────
+
+  let _uaAll     = [];
+  let _uaSeg     = "all";
+  let _uaSort    = "lastSeen";
+  let _uaSearch  = "";
+  let _uaSortDir = {}; // col → "asc"|"desc"
+
+  function segment(u) {
+    if (u.courseClicks > 0)                          return "engaged";
+    if (u.messages    > 0)                          return "curious";
+    return "browsing";
+  }
+
+  function segmentLabel(s) {
+    return { engaged: "Engaged", curious: "Curious", browsing: "Browsing" }[s] ?? s;
+  }
+
+  function renderUserActivity(users) {
+    _uaAll = users;
+    // Wire controls
+    document.getElementById("ua-search").addEventListener("input", (e) => { _uaSearch = e.target.value.toLowerCase(); paintTable(); });
+    document.getElementById("ua-sort").addEventListener("change", (e) => { _uaSort = e.target.value; paintTable(); });
+    document.querySelectorAll(".ua-filter-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".ua-filter-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        _uaSeg = btn.dataset.seg;
+        paintTable();
+      });
+    });
+    document.querySelectorAll(".ua-table th.sortable").forEach((th) => {
+      th.addEventListener("click", () => {
+        const col = th.dataset.col;
+        _uaSortDir[col] = _uaSortDir[col] === "desc" ? "asc" : "desc";
+        _uaSort = col;
+        document.getElementById("ua-sort").value = col;
+        document.querySelectorAll(".ua-table th").forEach(t => t.classList.remove("sort-active"));
+        th.classList.add("sort-active");
+        th.querySelector(".ua-sort-arrow").textContent = _uaSortDir[col] === "asc" ? "↑" : "↓";
+        paintTable();
+      });
+    });
+    paintTable();
+  }
+
+  function paintTable() {
+    let rows = _uaAll.filter((u) => {
+      // Segment filter
+      if (_uaSeg !== "all" && segment(u) !== _uaSeg) return false;
+      // Search filter (userId or any topic)
+      if (_uaSearch) {
+        const haystack = [u.userId, ...(u.topics ?? [])].join(" ").toLowerCase();
+        if (!haystack.includes(_uaSearch)) return false;
+      }
+      return true;
+    });
+
+    // Sort
+    const dir = _uaSortDir[_uaSort] === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      if (_uaSort === "lastSeen") {
+        return dir * ((a.lastSeen ?? "") > (b.lastSeen ?? "") ? 1 : -1);
+      }
+      return dir * ((a[_uaSort] ?? 0) - (b[_uaSort] ?? 0));
+    });
+
+    const tbody = document.getElementById("ua-body");
+    const empty = document.getElementById("ua-empty");
+
+    if (!rows.length) {
+      tbody.innerHTML = "";
+      empty.style.display = "block";
+      document.getElementById("ua-count").textContent = "0 users";
+      return;
+    }
+
+    empty.style.display = "none";
+    document.getElementById("ua-count").textContent = `${rows.length} user${rows.length !== 1 ? "s" : ""}`;
+
+    tbody.innerHTML = rows.map((u, i) => {
+      const seg  = segment(u);
+      const segBadge = {
+        engaged:  `<span class="ua-segment-badge engaged">Engaged</span>`,
+        curious:  `<span class="ua-segment-badge curious">Curious</span>`,
+        browsing: `<span class="ua-segment-badge browsing">Browsing</span>`,
+      }[seg];
+
+      const topics = (u.topics ?? []).slice(0, 5).map(t =>
+        `<span class="ua-topic-tag">${esc(t)}</span>`
+      ).join("") || `<span style="color:var(--gray);font-size:11px">—</span>`;
+
+      const lastSeen = u.lastSeen ? relTime(u.lastSeen) : "—";
+
+      const recList = (u.coursesRecommended ?? []).length
+        ? (u.coursesRecommended).map(c => `<li>${esc(c)}</li>`).join("")
+        : `<li class="ua-detail-empty">None recorded</li>`;
+
+      const clickList = (u.coursesClicked ?? []).length
+        ? (u.coursesClicked).map(c => `<li>${esc(c)}</li>`).join("")
+        : `<li class="ua-detail-empty">None yet</li>`;
+
+      return `
+        <tr class="ua-row" data-idx="${i}">
+          <td style="width:24px;padding-left:14px"><span class="ua-expand-icon">▶</span></td>
+          <td><span class="ua-uid">${esc(u.userId)}</span></td>
+          <td>${segBadge}</td>
+          <td><span class="ua-num">${u.sessions}</span></td>
+          <td><span class="ua-num">${u.messages}</span></td>
+          <td><span class="ua-num ${u.courseClicks > 0 ? "accent" : "zero"}">${u.courseClicks}</span></td>
+          <td><div class="ua-topics">${topics}</div></td>
+          <td><span class="ua-time">${lastSeen}</span></td>
+        </tr>
+        <tr class="ua-detail-row" data-detail="${i}">
+          <td colspan="8" class="ua-detail-cell">
+            <div class="ua-detail-grid">
+              <div class="ua-detail-block">
+                <h4>Courses recommended</h4>
+                <ul class="ua-detail-list">${recList}</ul>
+              </div>
+              <div class="ua-detail-block">
+                <h4>Courses clicked</h4>
+                <ul class="ua-detail-list">${clickList}</ul>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+    }).join("");
+
+    // Row expand/collapse
+    tbody.querySelectorAll(".ua-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        const idx    = row.dataset.idx;
+        const detail = tbody.querySelector(`.ua-detail-row[data-detail="${idx}"]`);
+        const isOpen = detail.classList.contains("open");
+        // Close all first
+        tbody.querySelectorAll(".ua-detail-row").forEach(r => r.classList.remove("open"));
+        tbody.querySelectorAll(".ua-row").forEach(r => r.classList.remove("expanded"));
+        if (!isOpen) {
+          detail.classList.add("open");
+          row.classList.add("expanded");
+        }
+      });
+    });
+  }
+
+  function relTime(iso) {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins  = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days  = Math.floor(diff / 86400000);
+    if (mins  < 1)   return "just now";
+    if (mins  < 60)  return `${mins}m ago`;
+    if (hours < 24)  return `${hours}h ago`;
+    if (days  < 30)  return `${days}d ago`;
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  function fmt(n) { return (n ?? 0).toLocaleString(); }
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+</script>
+</body>
+</html>
